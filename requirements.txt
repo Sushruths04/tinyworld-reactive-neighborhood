@@ -1,0 +1,10 @@
+gradio>=5.0
+spaces
+transformers
+torch
+accelerate
+voxcpm
+cohere
+soundfile
+numpy
+sentencepiece

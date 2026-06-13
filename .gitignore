@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Secrets & env
+.env
+*.key
+.cohere_key
+
+# Model caches / weights
+.cache/
+hf_cache/
+*.bin
+*.safetensors
+*.ckpt
+
+# Audio scratch / generated output
+*.wav
+*.mp3
+out/
+outputs/
+tmp/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Modal
+.modal/
+
+# Local Gradio state
+.gradio/
