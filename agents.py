@@ -1,6 +1,7 @@
 import os
 import random
 import re
+import time
 import concurrent.futures
 import world_state
 from worlds import get_world
@@ -11,6 +12,17 @@ MODAL_REACT_URL = os.environ.get(
     "MODAL_REACT_URL",
     "https://mitvho09--tinyworld-inference-react-endpoint.modal.run",
 )
+
+PRIMARY_MODEL = "nvidia/Nemotron-Mini-4B-Instruct"
+_FAILURES = 0
+_CIRCUIT_OPEN_UNTIL = 0.0
+_RUNTIME_STATUS = {
+    "mode": "mock" if MOCK else "unknown",
+    "model": "offline demo" if MOCK else PRIMARY_MODEL,
+    "message": "Offline demo (mock)" if MOCK else "Model not checked yet",
+    "latency": None,
+    "error": None,
+}
 
 MOODS = [
     "happy", "stressed", "bored", "excited", "hungry",
@@ -518,10 +530,19 @@ def _mock_react(character, event, mood, world):
 
 
 def _real_react(character, event, mood, memory, relationships, world):
+    global _FAILURES, _CIRCUIT_OPEN_UNTIL
     prompt = build_agent_prompt(character, event, mood, memory, relationships, world)
 
     try:
         import httpx
+
+        now = time.time()
+        if _CIRCUIT_OPEN_UNTIL > now:
+            _set_runtime_status("error", character["model"], "LLM error", None, "circuit breaker cooling down")
+            return _error_reaction(
+                character, mood,
+                f"model unreachable — retry after {int(_CIRCUIT_OPEN_UNTIL - now)}s",
+            )
 
         payload = {
             "event": event,
@@ -529,17 +550,34 @@ def _real_react(character, event, mood, memory, relationships, world):
             "prompts": {character["name"]: prompt},
         }
 
-        with httpx.Client(timeout=120.0) as client:
-            resp = client.post(MODAL_REACT_URL, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
+        data = None
+        last_error = None
+        for attempt in range(2):
+            try:
+                timeout = 180.0 if attempt == 0 else 45.0
+                _set_runtime_status("waking", character["model"], "Waking the model (~90s)", None)
+                start = time.time()
+                with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+                    resp = client.post(MODAL_REACT_URL, json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                latency = round(time.time() - start, 2)
+                _FAILURES = 0
+                _set_runtime_status("live", character["model"], "Live", latency)
+                break
+            except Exception as e:
+                last_error = e
+                if attempt == 0:
+                    time.sleep(1.0)
+        if data is None:
+            raise last_error or RuntimeError("Modal request failed")
 
         reactions = data.get("reactions", [])
         if reactions and not reactions[0].get("error"):
             raw = reactions[0]["text"]
             text = _clean_line(raw)                       # real LLM dialogue, de-noised
-            if len(text) < 4:                            # output was all task-meta — use a persona line
-                return _mock_react(character, event, mood, world)
+            if len(text) < 4:
+                return _error_reaction(character, mood, "model returned unusable text")
             # movement + action are decided by the engine so a weak model can't break them
             understanding, action, goto = _mock_brain(character, event, world)
             drama = _compute_drama(text + " " + action)
@@ -555,13 +593,56 @@ def _real_react(character, event, mood, memory, relationships, world):
                 "moved_to": goto,
                 "vibe_delta": _compute_vibe_delta(mood),
                 "affinity_deltas": _compute_affinity_deltas(character["name"], character, mood),
+                "error": False,
             }
-        else:
-            return _mock_react(character, event, mood, world)
+        message = reactions[0].get("text", "model unreachable") if reactions else "model unreachable"
+        raise RuntimeError(message)
 
     except Exception as e:
+        _FAILURES += 1
+        if _FAILURES >= 3:
+            _CIRCUIT_OPEN_UNTIL = time.time() + 60.0
         print(f"[agents] Modal call failed for {character['name']}: {e}")
-        return _mock_react(character, event, mood, world)
+        _set_runtime_status("error", character["model"], "LLM error", None, str(e))
+        return _error_reaction(character, mood, f"model unreachable — retrying ({e})")
+
+
+def _set_runtime_status(mode, model, message, latency=None, error=None):
+    _RUNTIME_STATUS.update({
+        "mode": "mock" if MOCK else mode,
+        "model": "offline demo" if MOCK else (model or PRIMARY_MODEL),
+        "message": "Offline demo (mock)" if MOCK else message,
+        "latency": latency,
+        "error": error,
+    })
+
+
+def get_runtime_status():
+    if MOCK:
+        return {
+            "mode": "mock",
+            "model": "offline demo",
+            "message": "Offline demo (mock)",
+            "latency": None,
+            "error": None,
+        }
+    return dict(_RUNTIME_STATUS)
+
+
+def _error_reaction(character, mood, message):
+    return {
+        "name": character["name"],
+        "mood": mood,
+        "text": f"[{message}]",
+        "understanding": "The model call failed, so no in-character decision was produced.",
+        "action": "wait for the model to become reachable",
+        "model": character["model"],
+        "drama": 0.05,
+        "moved_to": None,
+        "vibe_delta": {"energy": 0.0, "social": 0.0},
+        "affinity_deltas": {},
+        "error": True,
+    }
 
 
 def _react_one(character, event, world):
@@ -643,6 +724,7 @@ def react(world_id, event, mode="solo"):
     return {
         "reactions": reactions,
         "town_mood_delta": round(town_delta, 4),
+        "runtime": get_runtime_status(),
     }
 
 

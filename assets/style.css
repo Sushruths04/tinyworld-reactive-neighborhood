@@ -92,6 +92,22 @@ label > span { color: var(--muted) !important; font-family: 'Rajdhani', sans-ser
 .ticker-sep { opacity: 0.35; }
 .ticker-chaos { color: var(--neon-violet); letter-spacing: 1px; }
 .ticker-events { color: var(--gold); }
+.mode-badge {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mode-live { border-color: rgba(124,255,178,0.55); color: var(--neon-lime); }
+.mode-waking, .mode-mock { border-color: rgba(255,215,106,0.55); color: var(--gold); }
+.mode-error { border-color: rgba(255,95,162,0.65); color: var(--neon-pink); }
 
 /* ===================== PANELS ===================== */
 .glass-panel {

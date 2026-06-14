@@ -135,8 +135,17 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Redeployed Modal successfully after the async endpoint fix.
 - Verified: `py_compile`, `validate_worlds.py`, `node --check assets/game.js`, malicious-text render escaping, and valid Gradio callback flow on `http://localhost:8062` (`do_trigger`, `random_chaos`, `run_scenario`, `switch_world`, `transcribe_audio`).
 
+## Done & verified — V10 Phase 1 (honesty & health, by Codex, 2026-06-14)
+- Added `CODEX_REBUILD_SPEC.md` as the locked rebuild plan and started executing it in order.
+- Added `health_check.py`: checks the real Modal LLM path with a tiny warm-up generation and reports `LLM: LIVE (...)` or `LLM: UNREACHABLE (...)`; also probes voice/transcribe when their URLs are configured.
+- Updated `start.sh` to run `python3 health_check.py || true` before launching Gradio, so startup prints an explicit health verdict.
+- Added a top-bar runtime badge in `app.py`: 🟢 live, 🟡 waking/mock, or 🔴 LLM error. Event and scenario callbacks return the current badge state.
+- Updated `agents.py` real mode so Modal failures and unusable model output return visible `error=True` reactions like `[model unreachable — retrying (...)]` instead of silently falling back to canned mock reactions. Added first-call 180s timeout, one retry, runtime status, and a simple failure cooldown.
+- Verified offline/mock: `python3 -m py_compile app.py agents.py voice.py transcribe.py world_state.py modal_app.py health_check.py worlds/*.py`, `TINYWORLD_MOCK=1 python3 -c "import agents; ..."` returns 5 reactions + mock runtime, `TINYWORLD_MOCK=1 python3 health_check.py`, `node --check assets/game.js`.
+- Verified Gradio callback smoke on `http://localhost:8098` with `TINYWORLD_MOCK=1`: `/do_trigger` and `/run_scenario` return the new 🟡 mock badge without callback errors. Local bind/client required sandbox escalation.
+
 ## In progress
-- None — V9 bug pass complete and tested.
+- V10 Phase 2 — decision engine (`decide.py`) per `CODEX_REBUILD_SPEC.md`: structured Decision JSON, guardrails, authoritative `goto`, and removal of random movement reassignment.
 
 ## Deploy note ("post it")
 - Local run is fully working: `TINYWORLD_MOCK=1 python3 app.py` → http://localhost:7860, or set `GRADIO_SERVER_PORT=<port>` if 7860 is busy.
@@ -144,9 +153,10 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
   and the real (non-mock) model path. Commits/push remain **Codex-only** per project rule.
 
 ## Next up
-- Live endpoint probe from this machine once sandbox approval/network permits: call `voice.generate_voice(...)`, then feed that WAV into `transcribe.transcribe(...)`.
-- Distinct realistic redesign pass for `starhaven` and `old_town`.
-- Sponsor credits + submission cleanup.
+- V10 Phase 2: add `decide.py`, route `agents.react()` through validated Decisions, and make `build_reactions_payload()` honor engine-approved `goto` without gather/scatter randomization.
+- V10 Phase 3: add directed-command router.
+- V10 Phase 4: add clock, schedules, needs, and daily logs.
+- V10 Phase 5: keep Maple Street, replace `starhaven`/`old_town` with Riverside Campus.
 
 ## Blockers / decisions
 - Nemotron-Mini-4B is currently wired as the primary public NVIDIA model; MiniCPM5-1B remains loaded on Modal as fallback.
@@ -156,4 +166,4 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Diorama PNG not yet created — stage uses CSS gradient fallback.
 
 ## How to resume
-- Read `AGENTS.md`, then `REDESIGN_V2.md`, then this file. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`, trigger one typed event, then record mic audio and press Transcribe; first real voice/transcribe requests may cold-start Modal.
+- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 2. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.

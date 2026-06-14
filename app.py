@@ -155,6 +155,30 @@ def render_ticker(world_id):
     )
 
 
+def render_mode_badge(status=None):
+    status = status or agents.get_runtime_status()
+    mode = status.get("mode")
+    model = status.get("model") or "unknown"
+    latency = status.get("latency")
+    error = status.get("error")
+    if mode == "live":
+        label = f"🟢 Live · {model.split('/')[-1]}"
+        if latency is not None:
+            label += f" · {latency:.1f}s"
+        cls = "mode-live"
+    elif mode == "waking":
+        label = f"🟡 Waking · {model.split('/')[-1]}"
+        cls = "mode-waking"
+    elif mode == "error":
+        msg = f" · {error}" if error else ""
+        label = f"🔴 LLM error{msg}"
+        cls = "mode-error"
+    else:
+        label = "🟡 Offline demo (mock)"
+        cls = "mode-mock"
+    return f'<div class="mode-badge {cls}">{esc(label)}</div>'
+
+
 def render_town_log(world_id, reactions=None, followup=None):
     world = get_world(world_id)
     if not reactions:
@@ -272,6 +296,8 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
                 value=DEFAULT_WORLD, label="World")
         with gr.Column(scale=3, min_width=210):
             ticker_html = gr.HTML(render_ticker(DEFAULT_WORLD))
+        with gr.Column(scale=2, min_width=210):
+            mode_badge_html = gr.HTML(render_mode_badge())
 
     # the canvas stage (rendered once, never re-rendered → game loop persists)
     gr.HTML(render_stage_shell())
@@ -337,7 +363,9 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
     def _run_event(world_id, event_text, focus=None):
         world = get_world(world_id)
         world_state.init_cast(world)
-        reactions = agents.react(world_id, event_text)["reactions"]
+        result = agents.react(world_id, event_text)
+        reactions = result["reactions"]
+        runtime = result.get("runtime") or agents.get_runtime_status()
         followup = agents.generate_followup(reactions, event_text)
         top = max(reactions, key=lambda r: r["drama"])
         audio = None
@@ -351,12 +379,13 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
                 render_ticker(world_id), audio,
                 gr.Dropdown(choices=names, value=names[0] if names else None),
                 reactions, build_reactions_payload(world_id, reactions),
-                render_explainer(world_id, reactions, focus))
+                render_explainer(world_id, reactions, focus), render_mode_badge(runtime))
 
     def do_trigger(event_text, world_id):
         if not event_text or not event_text.strip():
             return (render_town_log(world_id), render_roster(world_id), render_ticker(world_id),
-                    None, gr.Dropdown(choices=[], value=None), [], "", render_explainer(world_id))
+                    None, gr.Dropdown(choices=[], value=None), [], "", render_explainer(world_id),
+                    render_mode_badge())
         return _run_event(world_id, event_text.strip())
 
     def run_scenario(scenario_id, world_id):
@@ -364,7 +393,7 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
         scen = next((s for s in world.get("scenarios", []) if s["id"] == scenario_id), None)
         if not scen:
             return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
-                    gr.update(), gr.update(), gr.update(), gr.update())
+                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
         return (scen["event"],) + _run_event(world_id, scen["event"], scen.get("focus"))
 
     def random_chaos(world_id):
@@ -381,7 +410,7 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
         return (build_world_payload(world_id), "", render_town_log(world_id),
                 render_roster(world_id), render_ticker(world_id),
                 gr.Dropdown(choices=scenario_choices(world_id), value=None),
-                render_explainer(world_id), world_id)
+                render_explainer(world_id), world_id, render_mode_badge())
 
     def transcribe_audio(audio_path):
         if not audio_path:
@@ -407,7 +436,7 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
             return None
 
     trig_out = [town_log_html, roster_html, ticker_html, voice_output,
-                hear_name, last_reactions_state, reactions_box, explainer_html]
+                hear_name, last_reactions_state, reactions_box, explainer_html, mode_badge_html]
     trigger_btn.click(do_trigger, [event_input, current_world_id], trig_out)
     event_input.submit(do_trigger, [event_input, current_world_id], trig_out)
     run_scenario_btn.click(run_scenario, [scenario_dd, current_world_id], [event_input] + trig_out)
@@ -416,7 +445,7 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
     hear_btn.click(hear_reaction, [hear_name, current_world_id, last_reactions_state], [voice_output])
     world_picker.change(switch_world, [world_picker],
                         [world_box, reactions_box, town_log_html, roster_html, ticker_html,
-                         scenario_dd, explainer_html, current_world_id])
+                         scenario_dd, explainer_html, current_world_id, mode_badge_html])
 
 
 if __name__ == "__main__":
