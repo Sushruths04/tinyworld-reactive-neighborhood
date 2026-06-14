@@ -12,7 +12,7 @@ CHARACTERS = [
             "Priya Raman": "friend",
         },
         "voice_description": "(a grumpy elderly woman, deep measured low-pitched voice)",
-        "model": "openbmb/MiniCPM5-1B",
+        "model": "nvidia/Nemotron-Mini-4B-Instruct",
     },
     {
         "name": "Jay Park",
@@ -27,7 +27,7 @@ CHARACTERS = [
             "Priya Raman": "friend",
         },
         "voice_description": "(an energetic young man, quick bright mid-pitched voice)",
-        "model": "openbmb/MiniCPM5-1B",
+        "model": "nvidia/Nemotron-Mini-4B-Instruct",
     },
     {
         "name": "Nia Okafor",
@@ -42,7 +42,7 @@ CHARACTERS = [
             "Priya Raman": "family",
         },
         "voice_description": "(a steady adult woman, warm confident medium-low voice)",
-        "model": "openbmb/MiniCPM5-1B",
+        "model": "nvidia/Nemotron-Mini-4B-Instruct",
     },
     {
         "name": "Luca Bell",
@@ -57,7 +57,7 @@ CHARACTERS = [
             "Priya Raman": "rival",
         },
         "voice_description": "(a teenage boy, eager expressive slightly high-pitched voice)",
-        "model": "openbmb/MiniCPM5-1B",
+        "model": "nvidia/Nemotron-Mini-4B-Instruct",
     },
     {
         "name": "Priya Raman",
@@ -72,6 +72,6 @@ CHARACTERS = [
             "Luca Bell": "rival",
         },
         "voice_description": "(a precise middle-aged woman, crisp thoughtful medium voice)",
-        "model": "openbmb/MiniCPM5-1B",
+        "model": "nvidia/Nemotron-Mini-4B-Instruct",
     },
 ]

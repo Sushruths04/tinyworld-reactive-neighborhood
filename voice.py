@@ -26,10 +26,16 @@ def generate_voice(text: str, voice_desc: str) -> str:
 
 
 def _mock_generate(text: str) -> str:
-    sample_rate = 48000
-    duration = 0.4
-    samples = int(sample_rate * duration)
-    audio = np.zeros(samples, dtype=np.float32)
+    # Audible placeholder so the voice/hear features are verifiable without a GPU.
+    sample_rate = 24000
+    duration = min(1.6, 0.5 + 0.03 * len(text.split()))
+    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    base = 150 + (hash(text) % 120)  # per-line pitch
+    wobble = 1 + 0.04 * np.sin(2 * np.pi * 5 * t)  # gentle speech-like wobble
+    tone = 0.22 * np.sin(2 * np.pi * base * wobble * t)
+    tone += 0.08 * np.sin(2 * np.pi * base * 2 * t)
+    env = np.minimum(1.0, np.minimum(t * 12, (duration - t) * 8))  # fade in/out
+    audio = (tone * env).astype(np.float32)
     path = os.path.join(tempfile.gettempdir(), f"tinyworld_voice_{os.getpid()}.wav")
     try:
         import soundfile as sf
@@ -50,7 +56,7 @@ def _real_generate(text: str, voice_desc: str) -> str:
 
         payload = {"text": text, "voice_desc": voice_desc}
 
-        with httpx.Client(timeout=120.0, follow_redirects=True) as client:
+        with httpx.Client(timeout=900.0, follow_redirects=True) as client:
             resp = client.post(MODAL_VOICE_URL, json=payload)
             resp.raise_for_status()
 

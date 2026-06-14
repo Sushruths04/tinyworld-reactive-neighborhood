@@ -8,3 +8,4 @@ cohere
 soundfile
 numpy
 sentencepiece
+httpx

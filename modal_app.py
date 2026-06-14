@@ -26,6 +26,16 @@ tts_image = (
     )
 )
 
+asr_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .apt_install("ffmpeg")
+    .pip_install(
+        "torch>=2.0",
+        "openai-whisper",
+        "fastapi[standard]",
+    )
+)
+
 
 # ---------------------------------------------------------------------------
 # LLM class — loads both models once, serves multiple characters
@@ -47,7 +57,8 @@ class LLM:
         self.tokenizers = {}
 
         model_ids = [
-            "openbmb/MiniCPM5-1B",
+            "nvidia/Nemotron-Mini-4B-Instruct",   # instruction-tuned 4B — clean in-character dialogue
+            "openbmb/MiniCPM5-1B",                 # kept as a lighter fallback
         ]
 
         for mid in model_ids:
@@ -68,6 +79,8 @@ class LLM:
         import torch
         import re
 
+        if model_id not in self.models:        # never silently fail — use a loaded model
+            model_id = next(iter(self.models))
         tok = self.tokenizers[model_id]
         mdl = self.models[model_id]
 
@@ -109,7 +122,8 @@ class LLM:
 @app.cls(
     image=tts_image,
     gpu="A10G",
-    timeout=300,
+    timeout=900,
+    startup_timeout=900,
     scaledown_window=120,
 )
 class TTS:
@@ -137,6 +151,45 @@ class TTS:
         buf = io.BytesIO()
         sf.write(buf, wav, self.model.tts_model.sample_rate, format="WAV")
         return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# ASR class — Whisper speech-to-text for microphone events
+# ---------------------------------------------------------------------------
+
+@app.cls(
+    image=asr_image,
+    gpu="A10G",
+    timeout=300,
+    scaledown_window=120,
+)
+class ASR:
+    @modal.enter()
+    def load_model(self):
+        import whisper
+
+        print("Loading Whisper base model...")
+        self.model = whisper.load_model("base")
+        print("Whisper base model loaded.")
+
+    @modal.method()
+    def transcribe_bytes(self, audio_bytes: bytes, suffix: str = ".wav") -> str:
+        import os
+        import tempfile
+
+        suffix = suffix if suffix.startswith(".") else f".{suffix}"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+            f.write(audio_bytes)
+            path = f.name
+
+        try:
+            result = self.model.transcribe(path, fp16=True)
+            return (result.get("text") or "").strip()
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +253,7 @@ async def react_endpoint(request: Request):
     return JSONResponse(content={"reactions": results})
 
 
-@app.function(image=tts_image, timeout=300)
+@app.function(image=tts_image, timeout=900)
 @modal.fastapi_endpoint(method="POST")
 async def voice_endpoint(request: Request):
     """Accepts {text, voice_desc}, returns WAV bytes."""
@@ -219,3 +272,22 @@ async def voice_endpoint(request: Request):
         return Response(content=wav_bytes, media_type="audio/wav")
     except Exception as e:
         raise HTTPException(500, f"TTS failed: {e}")
+
+
+@app.function(image=asr_image, timeout=300)
+@modal.fastapi_endpoint(method="POST")
+async def transcribe_endpoint(request: Request):
+    """Accepts raw audio bytes, returns {"text": "..."}."""
+    from fastapi import HTTPException
+
+    audio_bytes = await request.body()
+    if not audio_bytes:
+        raise HTTPException(400, "audio body required")
+
+    suffix = request.headers.get("x-audio-suffix", ".wav")
+    asr = ASR()
+    try:
+        text = asr.transcribe_bytes.remote(audio_bytes, suffix)
+        return JSONResponse(content={"text": text})
+    except Exception as e:
+        raise HTTPException(500, f"Transcription failed: {e}")

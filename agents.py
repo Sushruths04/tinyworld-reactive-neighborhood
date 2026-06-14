@@ -1,9 +1,9 @@
 import os
 import random
+import re
 import concurrent.futures
-import json
-import characters as chars
-import unpredictability
+import world_state
+from worlds import get_world
 
 MOCK = os.environ.get("TINYWORLD_MOCK", "0") == "1"
 
@@ -11,6 +11,50 @@ MODAL_REACT_URL = os.environ.get(
     "MODAL_REACT_URL",
     "https://mitvho09--tinyworld-inference-react-endpoint.modal.run",
 )
+
+MOODS = [
+    "happy", "stressed", "bored", "excited", "hungry",
+    "tired", "nostalgic", "curious", "proud", "embarrassed",
+]
+
+SURPRISE_SEEDS = [
+    "Slip in one oddly specific detail from earlier today.",
+    "React as if this event confirms a private theory you never told anyone.",
+    "Let a petty personal concern steer part of your response.",
+    "Compare the event to a memory that still annoys you.",
+    "Say one thing confidently, then soften or complicate it.",
+    "Ask one pointed question that reveals your bias.",
+    "Treat one small part of the event as the real emergency.",
+    "Reveal a secret wish connected to the situation.",
+    "Interpret the event through your relationship with someone nearby.",
+    "End with a surprising offer, warning, or demand.",
+]
+
+MOOD_CONTEXT = {
+    "happy": "You are in a good mood. Let that warmth show.",
+    "stressed": "You are stressed and overwhelmed. It colors your view.",
+    "bored": "You are bored. Nothing impresses you.",
+    "excited": "You are buzzing with excitement.",
+    "hungry": "You are hungry and losing patience.",
+    "tired": "You are exhausted. Everything is too much effort.",
+    "nostalgic": "You are nostalgic. The past feels more real.",
+    "curious": "You are intensely curious. You want answers.",
+    "proud": "You are proud. This is your turf.",
+    "embarrassed": "You are embarrassed. You hope nobody noticed.",
+}
+
+GENERIC_MOCK = {
+    "happy": ["Honestly? I love this. Best thing to happen here in ages.", "Oh, this is wonderful. Count me in!"],
+    "stressed": ["This is exactly what I was afraid of. We need a plan, now.", "Okay, okay — everybody stay calm. Mostly me."],
+    "bored": ["Huh. Neat, I guess. Wake me if it gets interesting.", "Seen weirder. Slightly."],
+    "excited": ["No way! This is HUGE, we have to do something!", "I have been WAITING for something like this!"],
+    "hungry": ["Can we deal with this after I eat? Just asking.", "Great, drama on an empty stomach."],
+    "tired": ["I do not have the energy for this today.", "Can someone else handle it? I'm wiped."],
+    "nostalgic": ["This takes me back. Funny how things come around.", "Reminds me of the old days, before all... this."],
+    "curious": ["Wait, how does that even work? I need to know more.", "Fascinating. Let me get a closer look."],
+    "proud": ["Stand back — I've got this handled.", "Finally, a chance to show what I can do."],
+    "embarrassed": ["Oh no. Please tell me nobody saw that.", "I'm just going to pretend that didn't happen."],
+}
 
 MOCK_REACTIONS = {
     "Marta Voss": {
@@ -225,79 +269,256 @@ MOCK_REACTIONS = {
     },
 }
 
+MOVEMENT_HINTS = [
+    "If you'd naturally move somewhere during this event, end your reaction with [GOTO: hotspot_name].",
+    "If this event would make you walk to a different part of the neighborhood, end with [GOTO: hotspot_name].",
+    "Stay put unless the event strongly draws you somewhere else. If you move, end with [GOTO: hotspot_name].",
+]
+
+HOTSPOT_KEYS = [
+    "marta_home", "cafe", "park", "square", "jay_home",
+    "school", "nia_clinic", "priya_office",
+]
+
 
 def _build_mood_context(mood):
-    mood_notes = {
-        "happy": "You are in a good mood. Let that warmth show.",
-        "stressed": "You are stressed and overwhelmed. It colors your view.",
-        "bored": "You are bored. Nothing impresses you.",
-        "excited": "You are buzzing with excitement.",
-        "hungry": "You are hungry and losing patience.",
-        "tired": "You are exhausted. Everything is too much effort.",
-        "nostalgic": "You are nostalgic. The past feels more real.",
-        "curious": "You are intensely curious. You want answers.",
-        "proud": "You are proud. This is your turf.",
-        "embarrassed": "You are embarrassed. You hope nobody noticed.",
-    }
-    return mood_notes.get(mood, "")
+    return MOOD_CONTEXT.get(mood, "")
 
 
-def build_agent_prompt(character, event, mood, memory, relationships):
-    seed = random.choice(unpredictability.SURPRISE_SEEDS)
+def _hotspots(world):
+    """Destinations a character can choose. Prefer board tiles (what the app maps
+    and the renderer draws); fall back to the legacy top-level dict. Robust for
+    every world — starhaven/old_town only define board['hotspots_tile']."""
+    return (world.get("board", {}) or {}).get("hotspots_tile") or world.get("hotspots") or {}
+
+
+def build_agent_prompt(character, event, mood, memory, relationships, world):
+    seed = random.choice(SURPRISE_SEEDS)
+    movement = random.choice(MOVEMENT_HINTS)
 
     memory_str = ""
     if memory:
-        memory_str = "Your recent memories: " + "; ".join(memory[-3:]) + "."
+        memory_str = "Your recent memories: " + "; ".join(memory[-4:]) + "."
 
-    reflection = unpredictability.get_reflection(character["name"])
+    reflection = world_state.get_reflection(world["id"], character["name"])
     reflection_str = ""
     if reflection:
         reflection_str = f"Inner reflection: {reflection}"
+
+    hotspots = ", ".join(_hotspots(world).keys())
 
     persona = (
         f"You are {character['name']}, a {character['age']}-year-old {character['job']}. "
         f"Traits: {', '.join(character['traits'])}. "
         f"Backstory: {character['backstory']}. "
+        f"Catchphrase style: {character.get('catchphrase_hint', '')}. "
         f"{relationships} "
         f"{memory_str} "
         f"{reflection_str}"
     )
 
+    first = character["name"].split()[0]
     prompt = (
         f"{persona}\n\n"
-        f"Current mood: {mood}. {_build_mood_context(mood)}\n\n"
-        f"Event that just happened: {event}\n\n"
-        f"Respond in 2-3 sentences. Stay in character. Reference your mood and memories naturally. "
+        f"Your mood right now: {mood}. {_build_mood_context(mood)}\n\n"
+        f"Something just happened on your street: \"{event}\"\n\n"
+        f"React the way {first} truly would. In 1 to 2 short sentences, speak OUT LOUD in first person "
+        f"— your own voice — showing you understood what happened and what you mean to do about it. "
         f"{seed} "
-        f"DO NOT be predictable. NO narration — just your direct reaction."
+        f"Speak ONLY as {first}: no narration, no stage directions, no notes to yourself, no labels, no quotation marks."
     )
     return prompt
 
 
-def _mock_react(character, event, mood):
-    char_name = character["name"]
-    mood_reactions = MOCK_REACTIONS.get(char_name, MOCK_REACTIONS["Marta Voss"])
-    pool = mood_reactions.get(mood, mood_reactions.get("bored", ["Hmm. Interesting."]))
+# scratch / meta lines a weak model leaks instead of staying in character
+_META_RE = re.compile(
+    r"^(let me\b|i need to\b|i should\b|i'll (incorporate|write|make|ensure)|now,?\s*i\b|"
+    r"but the format\b|i think that works\b|first,?\s*i\b|okay,?\s*(so|let)\b|here('s| is)\b|"
+    r"in the (do|think|say)\b|for (the )?(say|do|think)\b|the format\b|as an ai\b|sure,?\s|note:)",
+    re.IGNORECASE,
+)
 
-    text = random.choice(pool)
+# task-referential phrases that mean the model is talking about the assignment, not the street
+_META_CONTAINS = re.compile(
+    r"(sentence|i'?ll count|let'?s (write|count|ensure)|1 to 2|the format|in character|"
+    r"the prompt|stage direction|first sentence|i (will|'?ll) (say|write))",
+    re.IGNORECASE,
+)
 
-    drama = random.uniform(0.2, 0.95)
+
+def _clean_line(raw):
+    """Pull a clean, in-character spoken line out of a messy small-model reply."""
+    raw = (raw or "").strip()
+    m = re.search(r"say\s*:\s*(.+)", raw, re.IGNORECASE)      # honor old SAY: format if used
+    cand = m.group(1).strip() if m else raw
+    cand = re.sub(r"\b(think|do|say|goto)\s*:\s*", " ", cand, flags=re.IGNORECASE)
+    cand = re.sub(r"\[[^\]]*\]", "", cand)                    # [GOTO: ...] / brackets
+    cand = re.sub(r"\*[^*]*\*", "", cand)                     # *stage directions*
+    cand = cand.replace("\n", " ").strip()
+    parts = re.split(r"(?<=[.!?])\s+", cand)
+    keep = [p.strip(" \"'") for p in parts
+            if p.strip() and not _META_RE.match(p.strip()) and not _META_CONTAINS.search(p)]
+    # empty => nothing in-character survived; caller falls back to a persona line
+    return " ".join(keep[:2]).strip(" \"'")
+
+
+def _parse_goto(text):
+    match = re.search(r'\[GOTO:\s*(\w+)\]', text)
+    if match:
+        hotspot = match.group(1)
+        clean_text = re.sub(r'\[GOTO:\s*\w+\]', '', text).strip()
+        if hotspot in HOTSPOT_KEYS:
+            return clean_text, hotspot
+        return clean_text, None
+    return text, None
+
+
+def _field(text, key):
+    m = re.search(rf'^\s*{key}\s*:\s*(.+?)\s*$', text, re.IGNORECASE | re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
+def _parse_structured(raw, world):
+    """Pull THINK / DO / SAY / GOTO out of a reasoning reply. Falls back to the
+    older [GOTO] / free-text shape so a model that ignores the format still works."""
+    think = _field(raw, "THINK")
+    do = _field(raw, "DO")
+    say = _field(raw, "SAY")
+    goto_raw = _field(raw, "GOTO")
+
+    goto = None
+    keys = list(_hotspots(world).keys())
+    if goto_raw:
+        cand = re.sub(r'[^a-z_]', '', goto_raw.lower().replace(" ", "_"))
+        if cand in keys:
+            goto = cand
+        else:
+            for k in keys:
+                if k in cand or cand in k:
+                    goto = k
+                    break
+
+    if not say:
+        # model didn't follow the format — treat the whole thing as the spoken line
+        say, legacy_goto = _parse_goto(raw.strip())
+        goto = goto or legacy_goto
+
+    # trim a stray DO that leaked into the spoken line
+    say = re.sub(r'^(THINK|DO|SAY|GOTO)\s*:\s*', '', say, flags=re.IGNORECASE).strip()
+    return think, do, say or raw.strip(), goto
+
+
+def _compute_drama(text):
+    drama = random.uniform(0.2, 0.9)
     exclamations = text.count("!")
     caps_words = sum(1 for w in text.split() if w.isupper() and len(w) > 2)
     drama = min(1.0, drama + exclamations * 0.05 + caps_words * 0.05)
+    return round(drama, 3)
+
+
+def _compute_vibe_delta(mood):
+    base = {"energy": 0.0, "social": 0.0}
+    mood_energy = {
+        "happy": 0.08, "excited": 0.12, "proud": 0.06, "curious": 0.04,
+        "stressed": -0.1, "bored": -0.08, "tired": -0.15, "hungry": -0.05,
+        "nostalgic": 0.02, "embarrassed": -0.03,
+    }
+    mood_social = {
+        "happy": 0.1, "excited": 0.08, "curious": 0.06, "proud": 0.02,
+        "nostalgic": 0.04, "stressed": -0.06, "bored": -0.1, "tired": -0.08,
+        "hungry": -0.04, "embarrassed": -0.05,
+    }
+    base["energy"] = mood_energy.get(mood, 0.0) + random.uniform(-0.02, 0.02)
+    base["social"] = mood_social.get(mood, 0.0) + random.uniform(-0.02, 0.02)
+    return base
+
+
+def _compute_affinity_deltas(name, character, mood):
+    deltas = {}
+    for other_name, rel in character.get("relationships", {}).items():
+        if rel == "friend":
+            deltas[other_name] = random.uniform(0.01, 0.04)
+        elif rel == "rival":
+            deltas[other_name] = random.uniform(-0.04, -0.01)
+        elif rel == "crush":
+            deltas[other_name] = random.uniform(0.02, 0.06)
+        elif rel == "family":
+            deltas[other_name] = random.uniform(0.01, 0.03)
+        if mood in ("stressed", "angry"):
+            deltas[other_name] = deltas.get(other_name, 0) - 0.02
+        elif mood in ("happy", "excited"):
+            deltas[other_name] = deltas.get(other_name, 0) + 0.01
+    return deltas
+
+
+# keyword -> where a sensible person would head to deal with that kind of situation
+_EVENT_HOTSPOT = [
+    (("power", "outage", "lights", "electric"), "priya_office"),
+    (("school", "kids", "class", "student"), "school"),
+    (("hurt", "injur", "accident", "sick", "fire", "emergency", "storm"), "nia_clinic"),
+    (("food", "truck", "hungry", "coffee", "cafe", "café"), "cafe"),
+    (("park", "tree", "object", "glow", "mural", "cat", "kitten", "animal"), "park"),
+    (("meeting", "everyone", "gather", "crowd", "news", "vote"), "square"),
+]
+
+
+def _mock_brain(character, event, world):
+    """Cheap stand-in for real reasoning: a relevant destination + a concrete action,
+    so even the offline demo shows characters engaging the situation, not just emoting."""
+    e = event.lower()
+    hs = _hotspots(world)
+    goto = None
+    for keys, spot in _EVENT_HOTSPOT:
+        if any(k in e for k in keys) and spot in hs:
+            goto = spot
+            break
+    if not goto:
+        goto = "square" if "square" in hs else (random.choice(list(hs.keys())) if hs else None)
+    # spread the cast out: about half deal with it on their own turf instead of all piling onto one spot
+    home = character.get("home")
+    if home in hs and random.random() < 0.5:
+        goto = home
+    job = character.get("job", "neighbor")
+    action = random.choice([
+        f"head to the {goto.replace('_', ' ')} to see it firsthand",
+        f"go to the {goto.replace('_', ' ')} and do something about it",
+        f"use what they know as a {job} to help",
+        f"rally a neighbor and act on it together",
+        f"check on the people most affected first",
+    ])
+    understanding = "This changes things on the block — better to deal with it than ignore it."
+    return understanding, action, goto
+
+
+def _mock_react(character, event, mood, world):
+    char_name = character["name"]
+    mood_reactions = MOCK_REACTIONS.get(char_name, GENERIC_MOCK)
+    pool = mood_reactions.get(mood, mood_reactions.get("bored", ["Hmm. Interesting."]))
+
+    text = random.choice(pool)
+    drama = _compute_drama(text)
+
+    text, goto = _parse_goto(text)
+    understanding, action, brain_goto = _mock_brain(character, event, world)
+    if not goto:
+        goto = brain_goto
 
     return {
         "name": char_name,
-        "job": character["job"],
         "mood": mood,
-        "model": character["model"],
         "text": text,
-        "drama": round(drama, 3),
+        "understanding": understanding,
+        "action": action,
+        "model": character["model"],
+        "drama": drama,
+        "moved_to": goto,
+        "vibe_delta": _compute_vibe_delta(mood),
+        "affinity_deltas": _compute_affinity_deltas(char_name, character, mood),
     }
 
 
-def _real_react(character, event, mood, memory, relationships):
-    prompt = build_agent_prompt(character, event, mood, memory, relationships)
+def _real_react(character, event, mood, memory, relationships, world):
+    prompt = build_agent_prompt(character, event, mood, memory, relationships, world)
 
     try:
         import httpx
@@ -315,157 +536,117 @@ def _real_react(character, event, mood, memory, relationships):
 
         reactions = data.get("reactions", [])
         if reactions and not reactions[0].get("error"):
-            rx = reactions[0]
-            text = rx["text"]
-
-            drama = random.uniform(0.3, 0.8)
-            exclamations = text.count("!")
-            caps_words = sum(1 for w in text.split() if w.isupper() and len(w) > 2)
-            drama = min(1.0, drama + exclamations * 0.05 + caps_words * 0.05)
+            raw = reactions[0]["text"]
+            text = _clean_line(raw)                       # real LLM dialogue, de-noised
+            if len(text) < 4:                            # output was all task-meta — use a persona line
+                return _mock_react(character, event, mood, world)
+            # movement + action are decided by the engine so a weak model can't break them
+            understanding, action, goto = _mock_brain(character, event, world)
+            drama = _compute_drama(text + " " + action)
 
             return {
                 "name": character["name"],
-                "job": character["job"],
                 "mood": mood,
-                "model": character["model"],
                 "text": text,
-                "drama": round(drama, 3),
+                "understanding": understanding,
+                "action": action,
+                "model": character["model"],
+                "drama": drama,
+                "moved_to": goto,
+                "vibe_delta": _compute_vibe_delta(mood),
+                "affinity_deltas": _compute_affinity_deltas(character["name"], character, mood),
             }
         else:
-            print(f"[agents] Modal returned error for {character['name']}")
-            return _mock_react(character, event, mood)
+            return _mock_react(character, event, mood, world)
 
     except Exception as e:
         print(f"[agents] Modal call failed for {character['name']}: {e}")
-        return _mock_react(character, event, mood)
+        return _mock_react(character, event, mood, world)
 
 
-def _react_one(character, event):
-    mood = unpredictability.reroll_mood(character["name"])
-    memory = unpredictability.get_recent_memories(character["name"])
-    relationships = unpredictability.format_relationships(character)
+def _react_one(character, event, world):
+    wid = world["id"]
+    mood = random.choice(MOODS)
+    world_state.set_mood(wid, character["name"], mood)
+    memory = world_state.get_memory(wid, character["name"])
+    relationships = _format_relationships(character)
 
     if MOCK:
-        result = _mock_react(character, event, mood)
+        result = _mock_react(character, event, mood, world)
     else:
-        result = _real_react(character, event, mood, memory, relationships)
+        result = _real_react(character, event, mood, memory, relationships, world)
 
-    unpredictability.update_memory(character["name"], event, result["text"])
+    # learn from what they DID, not just what they said, so future reactions build on it
+    learned = result.get("action") or result["text"]
+    world_state.add_memory(wid, character["name"], event, learned)
     return result
 
 
-def react(event: str) -> list:
-    if MOCK:
-        return _react_mock(event)
-    else:
-        return _react_modal(event)
+def _format_relationships(character):
+    relationships = character.get("relationships", {})
+    if not relationships:
+        return "Relationships: nobody notable in this neighborhood yet."
+    parts = [f"{other_name} is your {relationship}" for other_name, relationship in relationships.items()]
+    return "Relationships: " + "; ".join(parts) + "."
 
 
-def _react_mock(event: str) -> list:
+def react(world_id, event, mode="solo"):
+    world = get_world(world_id)
+    if not world:
+        raise ValueError(f"Unknown world: {world_id}")
+
+    state = world_state.get_state(world_id)
+    world_state.init_cast(world)
+    world_state.increment_event(world_id)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
-            executor.submit(_react_one, char, event): char
-            for char in chars.CHARACTERS
+            executor.submit(_react_one, char, event, world): char
+            for char in world["cast"]
         }
-        results = []
+        reactions = []
         for future in concurrent.futures.as_completed(futures):
             try:
-                results.append(future.result())
+                reactions.append(future.result())
             except Exception as e:
                 char = futures[future]
                 print(f"[agents] error for {char['name']}: {e}")
-                mood = unpredictability.get_mood(char["name"])
-                results.append({
+                mood = world_state.get_mood(world_id, char["name"])
+                reactions.append({
                     "name": char["name"],
-                    "job": char["job"],
                     "mood": mood,
-                    "model": char["model"],
                     "text": f"[Something went wrong, but {char['name']} is still thinking...]",
-                    "drama": 0.1,
-                })
-
-    order = {c["name"]: i for i, c in enumerate(chars.CHARACTERS)}
-    results.sort(key=lambda r: order.get(r["name"], 99))
-    return results
-
-
-def _react_modal(event: str) -> list:
-    import httpx
-
-    chars_by_model = {}
-    for char in chars.CHARACTERS:
-        model = char["model"]
-        if model not in chars_by_model:
-            chars_by_model[model] = []
-        chars_by_model[model].append(char)
-
-    all_results = []
-
-    for model_id, model_chars in chars_by_model.items():
-        prompts = {}
-        for char in model_chars:
-            mood = unpredictability.reroll_mood(char["name"])
-            memory = unpredictability.get_recent_memories(char["name"])
-            relationships = unpredictability.format_relationships(char)
-            prompt = build_agent_prompt(char, event, mood, memory, relationships)
-            prompts[char["name"]] = prompt
-
-        try:
-            payload = {
-                "event": event,
-                "characters": model_chars,
-                "prompts": prompts,
-            }
-
-            with httpx.Client(timeout=300.0, follow_redirects=True) as client:
-                resp = client.post(MODAL_REACT_URL, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-
-            modal_reactions = {r["name"]: r for r in data.get("reactions", [])}
-
-            for char in model_chars:
-                mood = unpredictability.get_mood(char["name"])
-                rx = modal_reactions.get(char["name"], {})
-
-                if rx and not rx.get("error") and len(rx.get("text", "")) > 10:
-                    text = rx["text"]
-                else:
-                    print(f"[agents] Modal failed for {char['name']}, using mock")
-                    mock_result = _mock_react(char, event, mood)
-                    text = mock_result["text"]
-
-                drama = random.uniform(0.3, 0.8)
-                exclamations = text.count("!")
-                caps_words = sum(1 for w in text.split() if w.isupper() and len(w) > 2)
-                drama = min(1.0, drama + exclamations * 0.05 + caps_words * 0.05)
-
-                all_results.append({
-                    "name": char["name"],
-                    "job": char["job"],
-                    "mood": mood,
                     "model": char["model"],
-                    "text": text,
-                    "drama": round(drama, 3),
+                    "drama": 0.1,
+                    "moved_to": None,
+                    "vibe_delta": {"energy": 0, "social": 0},
+                    "affinity_deltas": {},
                 })
 
-                unpredictability.update_memory(char["name"], event, text)
+    order = {c["name"]: i for i, c in enumerate(world["cast"])}
+    reactions.sort(key=lambda r: order.get(r["name"], 99))
 
-        except Exception as e:
-            print(f"[agents] Modal batch failed for model {model_id}: {e}")
-            for char in model_chars:
-                mood = unpredictability.reroll_mood(char["name"])
-                result = _mock_react(char, event, mood)
-                all_results.append(result)
-                unpredictability.update_memory(char["name"], event, result["text"])
+    for r in reactions:
+        world_state.apply_vibe_delta(world_id, r["name"], r["vibe_delta"])
+        world_state.apply_affinity_delta(world_id, r["name"], r["affinity_deltas"])
+        if r["moved_to"]:
+            world_state.set_position(world_id, r["name"], r["moved_to"])
 
-    order = {c["name"]: i for i, c in enumerate(chars.CHARACTERS)}
-    all_results.sort(key=lambda r: order.get(r["name"], 99))
-    return all_results
+    town_delta = sum(r["vibe_delta"]["energy"] for r in reactions) / len(reactions)
+    current_town = world_state.get_town_mood(world_id)
+    world_state.set_town_mood(world_id, current_town + town_delta)
+
+    for c in world["cast"]:
+        if state["event_count"] % 3 == 0:
+            world_state.maybe_form_reflection(world_id, c["name"])
+
+    return {
+        "reactions": reactions,
+        "town_mood_delta": round(town_delta, 4),
+    }
 
 
 def generate_followup(reactions, event):
-    """Generate a short follow-up beat referencing a prior reaction (probabilistic)."""
     if random.random() > 0.4:
         return None
 
@@ -496,9 +677,13 @@ def generate_followup(reactions, event):
 
 
 if __name__ == "__main__":
-    reactions = react("A mysterious glowing object lands in the park")
-    for r in reactions:
-        print(f"{r['name']} | {r['mood']} | {r['text']}")
-    followup = generate_followup(reactions, "A mysterious glowing object lands in the park")
+    from worlds import get_world
+    w = get_world("maple_street")
+    world_state.init_cast(w)
+    result = react("maple_street", "A mysterious glowing object lands in the park")
+    for r in result["reactions"]:
+        print(f"{r['name']} | {r['mood']} | goto={r['moved_to']} | {r['text']}")
+    print(f"\nTown mood delta: {result['town_mood_delta']}")
+    followup = generate_followup(result["reactions"], "A mysterious glowing object lands in the park")
     if followup:
         print(f"\n[FOLLOWUP] {followup['text']}")

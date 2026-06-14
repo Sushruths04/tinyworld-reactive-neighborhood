@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TinyWorld V2 — the town that remembers</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Inter:wght@400;600;700&display=swap');
+
+:root {
+  --bg-0: #0b0f1a;
+  --bg-1: #121829;
+  --bg-2: #1b2235;
+  --glass: rgba(20,28,48,0.55);
+  --stroke: rgba(120,160,255,0.18);
+  --neon-cyan: #38e8ff;
+  --neon-violet: #9b6bff;
+  --neon-pink: #ff5fa2;
+  --neon-lime: #7CFFB2;
+  --gold: #ffd76a;
+  --text: #eaf0ff;
+  --muted: #93a0c2;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body, .gradio-container {
+  background: var(--bg-0) !important;
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.gradio-container {
+  max-width: 1400px !important;
+  padding: 0 !important;
+}
+
+/* ===== TOP BAR ===== */
+.tw-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--stroke);
+  background: var(--glass);
+}
+
+.tw-logo {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 16px;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 10px var(--neon-cyan), 0 0 30px rgba(56,232,255,0.4);
+  letter-spacing: 2px;
+}
+
+.tw-tagline {
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* ===== PROGRESS TICKER ===== */
+.progress-ticker {
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.ticker-day { color: var(--neon-cyan); font-weight: bold; }
+.ticker-sep { margin: 0 6px; opacity: 0.4; }
+.ticker-chaos { color: var(--neon-violet); }
+
+/* ===== ROSTER RAIL ===== */
+.roster-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.roster-card {
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 10px;
+  text-align: center;
+  transition: all 0.25s ease;
+}
+
+.roster-card:hover {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 16px rgba(56,232,255,0.15);
+}
+
+.roster-emoji { font-size: 28px; margin-bottom: 2px; }
+
+.roster-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: var(--neon-cyan);
+  letter-spacing: 0.5px;
+}
+
+.roster-mood {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 2px 0 4px;
+}
+
+.vibe-row { display: flex; align-items: center; gap: 3px; margin: 1px 0; }
+.vibe-label { font-size: 9px; width: 12px; text-align: center; }
+.vibe-track { flex: 1; height: 4px; background: var(--bg-2); border-radius: 2px; overflow: hidden; }
+.vibe-fill { height: 100%; border-radius: 2px; transition: width 0.8s cubic-bezier(.2,.8,.2,1); }
+.vibe-val { font-family: 'VT323', monospace; font-size: 10px; color: var(--muted); width: 18px; text-align: right; }
+
+/* ===== STAGE ===== */
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/10;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--stroke);
+  box-shadow: 0 0 30px rgba(56,232,255,0.06), 0 16px 48px rgba(0,0,0,0.4);
+  background: var(--bg-1);
+}
+
+.stage-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.stage-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.stage-idle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  color: var(--muted);
+  z-index: 10;
+  animation: idle-breathe 3s ease-in-out infinite;
+}
+
+@keyframes idle-breathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* ===== AVATARS ===== */
+.avatar {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  transition: left 0.8s cubic-bezier(.2,.8,.2,1), top 0.8s cubic-bezier(.2,.8,.2,1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.avatar-emoji {
+  font-size: 32px;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6)) drop-shadow(0 0 10px rgba(56,232,255,0.3));
+  animation: avatar-bob 3s ease-in-out infinite;
+  position: relative;
+  z-index: 2;
+}
+
+@keyframes avatar-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.ground-shadow {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 6px;
+  background: rgba(0,0,0,0.35);
+  border-radius: 50%;
+  filter: blur(3px);
+  z-index: 0;
+}
+
+.avatar-mood {
+  font-size: 14px;
+  margin-top: -4px;
+  z-index: 3;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.ring {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+  z-index: 0;
+  transition: all 0.3s ease;
+}
+
+.ring.active {
+  background: radial-gradient(ellipse, rgba(56,232,255,0.5) 0%, transparent 70%);
+  animation: ring-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ring-pulse {
+  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.15); }
+}
+
+/* ===== SPEECH BUBBLES ===== */
+.bubble {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15,20,35,0.95);
+  color: var(--text);
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  line-height: 1.3;
+  padding: 8px 12px;
+  border-radius: 10px;
+  width: 180px;
+  z-index: 20;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5), 0 0 1px rgba(56,232,255,0.3), inset 0 1px 0 rgba(56,232,255,0.1);
+  border: 1px solid rgba(56,232,255,0.15);
+  opacity: 0;
+  animation: bubble-spring 0.35s cubic-bezier(.2,.8,.2,1) forwards;
+  word-wrap: break-word;
+}
+
+.bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 7px solid rgba(15,20,35,0.95);
+}
+
+@keyframes bubble-spring {
+  0% { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.9); }
+  70% { transform: translateX(-50%) translateY(-2px) scale(1.02); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+/* ===== SHOCKWAVE ===== */
+.shockwave {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border-radius: 50%;
+  border: 2px solid var(--neon-cyan);
+  pointer-events: none;
+  z-index: 30;
+  opacity: 0;
+}
+
+.shockwave.fire {
+  animation: shockwave-expand 0.8s ease-out forwards;
+}
+
+@keyframes shockwave-expand {
+  0% { width: 40px; height: 40px; margin: -20px 0 0 -20px; opacity: 0.8; border-width: 2px; }
+  100% { width: 400px; height: 400px; margin: -200px 0 0 -200px; opacity: 0; border-width: 1px; }
+}
+
+/* ===== TOWN LOG ===== */
+.panel-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 6px rgba(56,232,255,0.3);
+  margin-bottom: 6px;
+  letter-spacing: 1px;
+}
+
+.town-log-inner {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.town-log-inner::-webkit-scrollbar { width: 4px; }
+.town-log-inner::-webkit-scrollbar-track { background: var(--bg-2); border-radius: 2px; }
+.town-log-inner::-webkit-scrollbar-thumb { background: var(--neon-violet); border-radius: 2px; }
+
+.town-log-empty {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: var(--muted);
+  padding: 16px;
+  text-align: center;
+}
+
+.log-entry {
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(120,160,255,0.08);
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+}
+
+.log-emoji { font-size: 14px; margin-right: 4px; }
+.log-name { color: var(--neon-cyan); font-size: 12px; }
+.log-mood { font-size: 12px; margin-left: 2px; }
+.log-text { color: var(--text); margin-top: 2px; line-height: 1.4; }
+
+.log-followup { border-left: 2px solid var(--neon-violet); padding-left: 8px; }
+.log-gossip { border-left: 2px solid var(--gold); padding-left: 8px; font-style: italic; }
+
+/* ===== DOCKED CONSOLE ===== */
+.docked-console {
+  padding: 12px !important;
+  margin: 8px !important;
+}
+
+.docked-console .gr-textbox textarea {
+  background: var(--bg-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--stroke) !important;
+  border-radius: 10px !important;
+  font-family: 'VT323', monospace !important;
+  font-size: 16px !important;
+}
+
+.docked-console .gr-textbox textarea:focus {
+  border-color: var(--neon-cyan) !important;
+  box-shadow: 0 0 10px rgba(56,232,255,0.15) !important;
+}
+
+/* ===== BUTTONS ===== */
+button.primary, .gr-button-primary {
+  background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet)) !important;
+  color: #fff !important;
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 11px !important;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 10px 16px !important;
+  cursor: pointer !important;
+  box-shadow: 0 0 16px rgba(56,232,255,0.3);
+  transition: all 0.25s cubic-bezier(.2,.8,.2,1) !important;
+}
+
+button.primary:hover, .gr-button-primary:hover {
+  box-shadow: 0 0 24px rgba(56,232,255,0.5), 0 0 48px rgba(155,107,255,0.3) !important;
+  transform: translateY(-1px) !important;
+}
+
+button.primary:active, .gr-button-primary:active {
+  transform: scale(0.96) !important;
+}
+
+.gr-button {
+  background: var(--bg-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--stroke) !important;
+  border-radius: 10px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  transition: all 0.25s ease !important;
+}
+
+.gr-button:hover {
+  border-color: var(--neon-violet) !important;
+  box-shadow: 0 0 12px rgba(155,107,255,0.15) !important;
+}
+
+/* ===== DROPDOWN ===== */
+.gr-dropdown {
+  background: var(--bg-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--stroke) !important;
+  border-radius: 10px !important;
+}
+
+/* ===== GLASS PANEL ===== */
+.glass-panel {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  padding: 12px;
+  margin: 4px;
+}
+
+/* ===== FOOTER ===== */
+.tw-footer {
+  text-align: center;
+  padding: 16px;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--stroke);
+  margin-top: 12px;
+  line-height: 1.8;
+}
+
+.tw-footer strong { color: var(--neon-cyan); }
+.footer-muted { opacity: 0.6; font-size: 10px; }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 900px) {
+  .roster-rail { flex-direction: row; overflow-x: auto; }
+  .roster-card { min-width: 80px; }
+  .stage { aspect-ratio: 4/3; }
+}
+
+@media (max-width: 600px) {
+  .tw-logo { font-size: 12px; }
+  .tw-tagline { font-size: 14px; }
+  .roster-card { min-width: 60px; padding: 6px; }
+  .roster-emoji { font-size: 22px; }
+  .avatar-emoji { font-size: 24px; }
+  .bubble { width: 130px; font-size: 11px; padding: 5px 8px; }
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-0); }
+::-webkit-scrollbar-thumb { background: var(--bg-2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--neon-violet); }
+
+/* ===== GRADIO OVERRIDES ===== */
+label { color: var(--muted) !important; }
+.gr-block { background: transparent !important; }
+.row { gap: 4px !important; }
+
+body { background: #0b0f1a; padding: 0; max-width: 1400px; margin: 0 auto; min-height: 100vh; }
+</style>
+</head>
+<body>
+
+<div class="tw-topbar">
+  <div class="tw-logo">🏘️ TINYWORLD</div>
+  <div class="tw-tagline">the town that remembers</div>
+</div>
+
+<div style="padding:8px 16px;display:flex;align-items:center;gap:16px;border-bottom:1px solid rgba(120,160,255,0.18);background:rgba(20,28,48,0.55)">
+  <select style="background:#1b2235;color:#eaf0ff;border:1px solid rgba(120,160,255,0.18);border-radius:10px;padding:6px 12px;font-family:VT323;font-size:14px">
+    <option selected>Maple Street</option>
+  </select>
+  <div class="progress-ticker"><span class="ticker-day">Day 1</span><span class="ticker-sep">·</span><span class="ticker-events">⚡3 events</span><span class="ticker-sep">·</span><span class="ticker-chaos">Chaos █▯▯▯▯</span></div>
+</div>
+
+<div style="display:flex;gap:4px;padding:4px 8px">
+  <div style="flex:3;min-width:180px"><div class="roster-rail"><div class="roster-card"><div class="roster-emoji">🧓</div><div class="roster-name">Marta</div><div class="roster-mood">😊 happy</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:60%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">60</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:53%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">53</span></div></div><div class="roster-card"><div class="roster-emoji">🚴</div><div class="roster-name">Jay</div><div class="roster-mood">🥹 nostalgic</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:74%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">74</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:66%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">66</span></div></div><div class="roster-card"><div class="roster-emoji">🚑</div><div class="roster-name">Nia</div><div class="roster-mood">😰 stressed</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:38%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">38</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:28%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">28</span></div></div><div class="roster-card"><div class="roster-emoji">🧒</div><div class="roster-name">Luca</div><div class="roster-mood">😤 proud</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:57%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">57</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:44%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">44</span></div></div><div class="roster-card"><div class="roster-emoji">👩‍💼</div><div class="roster-name">Priya</div><div class="roster-mood">😐 bored</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:55%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">55</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:48%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">48</span></div></div></div></div>
+  <div style="flex:6"><div class="stage"><div class="stage-bg" style="background:linear-gradient(135deg, #1a4a2a 0%, #1e2235 40%, #0a3a2a 70%, #0a2a1a 100%);"></div><div class="stage-overlay tint" style="background:rgba(0,0,0,0)"></div><div class="avatar" style="left:20%;top:45%" data-name="Marta Voss"><div class="ground-shadow"></div><div class="ring active"></div><span class="avatar-emoji">🧓</span><div class="avatar-mood">😊</div><div class="bubble typewriter" data-delay="0">Ha! Finally something good happens. Don't tell anyone I said that.</div></div><div class="avatar" style="left:30%;top:25%" data-name="Jay Park"><div class="ground-shadow"></div><div class="ring active"></div><span class="avatar-emoji">🚴</span><div class="avatar-mood">🥹</div><div class="bubble typewriter" data-delay="50">You know, this reminds me of my first week on the job. Good times.</div></div><div class="avatar" style="left:20%;top:45%" data-name="Nia Okafor"><div class="ground-shadow"></div><div class="ring active"></div><span class="avatar-emoji">🚑</span><div class="avatar-mood">😰</div><div class="bubble typewriter" data-delay="100">Okay, deep breaths. I've handled worse in the ambulance. This is fine.</div></div><div class="avatar" style="left:20%;top:45%" data-name="Luca Bell"><div class="ground-shadow"></div><div class="ring active"></div><span class="avatar-emoji">🧒</span><div class="avatar-mood">😤</div><div class="bubble typewriter" data-delay="150">I TOLD everyone something amazing would happen here! Check my notebook!</div></div><div class="avatar" style="left:75%;top:60%" data-name="Priya Raman"><div class="ground-shadow"></div><div class="ring active"></div><span class="avatar-emoji">👩‍💼</span><div class="avatar-mood">😐</div><div class="bubble typewriter" data-delay="200">I'll believe it when I see it. Until then, I have zoning reports to review.</div></div><div class="shockwave"></div></div></div>
+  <div style="flex:3;min-width:220px">
+    <div class="panel-title">📜 TOWN LOG</div>
+    <div class="town-log-inner"><div class="log-entry"><span class="log-emoji">🧓</span><span class="log-name">Marta Voss</span><span class="log-mood">😊</span><div class="log-text">"Ha! Finally something good happens. Don't tell anyone I said that."</div></div><div class="log-entry"><span class="log-emoji">🚴</span><span class="log-name">Jay Park</span><span class="log-mood">🥹</span><div class="log-text">"You know, this reminds me of my first week on the job. Good times."</div></div><div class="log-entry"><span class="log-emoji">🚑</span><span class="log-name">Nia Okafor</span><span class="log-mood">😰</span><div class="log-text">"Okay, deep breaths. I've handled worse in the ambulance. This is fine."</div></div><div class="log-entry"><span class="log-emoji">🧒</span><span class="log-name">Luca Bell</span><span class="log-mood">😤</span><div class="log-text">"I TOLD everyone something amazing would happen here! Check my notebook!"</div></div><div class="log-entry"><span class="log-emoji">👩‍💼</span><span class="log-name">Priya Raman</span><span class="log-mood">😐</span><div class="log-text">"I'll believe it when I see it. Until then, I have zoning reports to review."</div></div><div class="log-entry log-gossip"><span class="log-emoji">🗣️</span><div class="log-text"><em>You heard Nia Okafor say: "Okay, deep breaths. I've handled worse in the ambulance. Thi..."</em></div></div></div>
+  </div>
+</div>
+
+<div style="padding:4px 8px">
+  <div class="glass-panel docked-console" style="padding:12px;margin:4px">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <input style="flex:5;background:#1b2235;color:#eaf0ff;border:1px solid rgba(120,160,255,0.18);border-radius:10px;padding:10px 14px;font-family:VT323;font-size:16px;outline:none" placeholder="Type an event to throw at the neighborhood…" disabled>
+      <button class="gr-button" style="flex:1;padding:8px 12px;border-radius:10px;background:#1b2235;color:#eaf0ff;border:1px solid rgba(120,160,255,0.18)">🎤 Mic</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button style="flex:2;background:linear-gradient(135deg,#38e8ff,#9b6bff);color:#fff;font-family:Press Start 2P;font-size:11px;border:none;border-radius:10px;padding:10px 16px;cursor:pointer;box-shadow:0 0 16px rgba(56,232,255,0.3)">⚡ Throw</button>
+      <button class="gr-button" style="flex:1;padding:8px 12px;border-radius:10px">🎲 Chaos</button>
+      <button class="gr-button" style="flex:1;padding:8px 12px;border-radius:10px">🎙️ Mic</button>
+    </div>
+  </div>
+</div>
+
+<div style="display:flex;gap:8px;padding:4px 16px">
+  <div style="flex:6;background:rgba(20,28,48,0.55);border:1px solid rgba(120,160,255,0.18);border-radius:10px;padding:8px 12px;font-family:VT323;font-size:13px;color:#eaf0ff">🔊 Auto-play (most dramatic)</div>
+  <div style="flex:3;display:flex;gap:4px">
+    <select style="flex:2;background:#1b2235;color:#eaf0ff;border:1px solid rgba(120,160,255,0.18);border-radius:10px;padding:6px 8px;font-family:VT323;font-size:13px"><option>Marta Voss</option><option>Jay Park</option><option>Nia Okafor</option><option>Luca Bell</option><option>Priya Raman</option></select>
+    <button class="gr-button" style="flex:1;padding:6px 8px;border-radius:10px;font-size:12px">🔊 Hear</button>
+  </div>
+</div>
+
+<div class="tw-footer">
+  Built for <strong>Build Small Hackathon 2026</strong> · Hugging Face × Gradio · Thousand Token Wood track<br>
+  Models: <strong>MiniCPM5-1B</strong> (OpenBMB) · <strong>VoxCPM2</strong> (OpenBMB) · <strong>Cohere Transcribe</strong> · <strong>Modal</strong> serverless<br>
+  <span class="footer-muted">🎮 Solo · 👥 Party (coming soon) · 🎓 Learn (coming soon)</span>
+</div>
+
+<script>// TinyWorld V2 — Stage animations
+// Staggered bubbles, typewriter, shockwave, auto-dismiss
+
+(function () {
+  var BUBBLE_LIFETIME_MS = 7000;
+  var STAGGER_DELAY_MS = 50;
+
+  function animateBubbles() {
+    var bubbles = document.querySelectorAll('.bubble');
+    var index = 0;
+    bubbles.forEach(function (b) {
+      if (b.dataset.animated) return;
+      b.dataset.animated = '1';
+      b.style.animationDelay = (index * STAGGER_DELAY_MS) + 'ms';
+      index++;
+    });
+  }
+
+  function typewriterReveal(bubble) {
+    var textNode = bubble.firstChild;
+    if (!textNode || textNode.nodeType !== 3) return;
+    var fullText = textNode.textContent;
+    if (fullText.length < 3) return;
+    textNode.textContent = '';
+    var charIndex = 0;
+    var speed = Math.max(10, Math.min(25, 500 / fullText.length));
+    function typeNext() {
+      if (charIndex < fullText.length) {
+        textNode.textContent += fullText[charIndex];
+        charIndex++;
+        setTimeout(typeNext, speed);
+      }
+    }
+    typeNext();
+  }
+
+  function dismissOldBubbles() {
+    var bubbles = document.querySelectorAll('.bubble');
+    bubbles.forEach(function (b) {
+      if (!b.dataset.spawned) b.dataset.spawned = Date.now();
+      var age = Date.now() - parseInt(b.dataset.spawned, 10);
+      if (age > BUBBLE_LIFETIME_MS) {
+        b.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+        b.style.opacity = '0';
+        b.style.transform = 'translateX(-50%) translateY(6px) scale(0.9)';
+        setTimeout(function () { b.remove(); }, 400);
+      }
+    });
+  }
+
+  setInterval(dismissOldBubbles, 1000);
+
+  function fireShockwave() {
+    var sw = document.querySelector('.shockwave');
+    if (!sw) return;
+    sw.classList.remove('fire');
+    void sw.offsetWidth;
+    sw.classList.add('fire');
+    setTimeout(function () { sw.classList.remove('fire'); }, 900);
+  }
+
+  var observer = new MutationObserver(function (mutations) {
+    var hasNewBubbles = false;
+    for (var m = 0; m < mutations.length; m++) {
+      var nodes = mutations[m].addedNodes;
+      for (var n = 0; n < nodes.length; n++) {
+        var node = nodes[n];
+        if (node.nodeType === 1) {
+          if (node.classList && node.classList.contains('bubble')) hasNewBubbles = true;
+          if (node.querySelector && node.querySelector('.bubble')) hasNewBubbles = true;
+        }
+      }
+    }
+    if (hasNewBubbles) {
+      setTimeout(function () {
+        animateBubbles();
+        var first = document.querySelector('.bubble:not([data-animated])');
+        if (first) typewriterReveal(first);
+      }, 50);
+      fireShockwave();
+    }
+  });
+
+  function watchStage() {
+    var stage = document.querySelector('.stage');
+    if (stage) {
+      observer.observe(stage, { childList: true, subtree: true });
+    } else {
+      setTimeout(watchStage, 300);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', watchStage);
+  } else {
+    watchStage();
+  }
+})();
+</script>
+</body></html>

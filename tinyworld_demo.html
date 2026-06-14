@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TinyWorld — AI Neighborhood Game</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Inter:wght@400;600;700&display=swap');
+
+:root {
+  --bg-0: #0b0f1a;
+  --bg-1: #121829;
+  --bg-2: #1b2235;
+  --glass: rgba(20,28,48,0.55);
+  --stroke: rgba(120,160,255,0.18);
+  --neon-cyan: #38e8ff;
+  --neon-violet: #9b6bff;
+  --neon-pink: #ff5fa2;
+  --neon-lime: #7CFFB2;
+  --gold: #ffd76a;
+  --grass: #5a8a3c;
+  --road: #6f7790;
+  --sky: #87ceeb;
+  --beige: #f5deb3;
+  --water: #3aa0c8;
+  --roof: #c45b5b;
+  --tree: #2f7d46;
+  --text: #eaf0ff;
+  --muted: #93a0c2;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body, .gradio-container {
+  background: var(--bg-0) !important;
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.gradio-container {
+  max-width: 1400px !important;
+  padding: 0 !important;
+}
+
+/* ===== HEADER ===== */
+.tw-header {
+  text-align: center;
+  padding: 28px 20px 18px;
+  position: relative;
+  z-index: 2;
+}
+
+.tw-logo {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 28px;
+  color: var(--neon-cyan);
+  text-shadow:
+    0 0 10px var(--neon-cyan),
+    0 0 30px rgba(56,232,255,0.4),
+    0 0 60px rgba(56,232,255,0.2);
+  letter-spacing: 3px;
+  margin-bottom: 8px;
+}
+
+.tw-tagline {
+  font-family: 'VT323', monospace;
+  font-size: 22px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+.tw-credits {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 8px;
+  opacity: 0.7;
+}
+
+/* ===== GLASS PANELS ===== */
+.glass-panel {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  padding: 16px;
+  margin: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(56,232,255,0.3), transparent);
+}
+
+.panel-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 8px rgba(56,232,255,0.4);
+  margin-bottom: 12px;
+  letter-spacing: 1px;
+}
+
+/* ===== MAP ===== */
+.map-panel {
+  position: relative;
+  overflow: visible;
+}
+
+.map-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(155,107,255,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 70%, rgba(56,232,255,0.06) 0%, transparent 50%);
+  animation: aurora 20s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes aurora {
+  0% { opacity: 0.5; transform: translateX(-5%) translateY(-3%); }
+  50% { opacity: 0.8; transform: translateX(5%) translateY(3%); }
+  100% { opacity: 0.5; transform: translateX(-3%) translateY(-5%); }
+}
+
+.tw-map {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  gap: 1px;
+  position: relative;
+  z-index: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  transform: perspective(900px) rotateX(12deg);
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(.2,.8,.2,1);
+  margin: 10px auto;
+  width: 100%;
+  max-width: 700px;
+  border: 1px solid rgba(56,232,255,0.15);
+  box-shadow:
+    0 0 30px rgba(56,232,255,0.08),
+    0 20px 60px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(56,232,255,0.1);
+}
+
+.tile {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  image-rendering: pixelated;
+  transition: all 0.2s ease;
+  min-height: 50px;
+}
+
+.tile:hover {
+  transform: translateY(-2px);
+  z-index: 10;
+  filter: brightness(1.15);
+}
+
+/* ===== PIXEL ART TILE TEXTURES — CLEAN FUTURISTIC ===== */
+.tile[data-type="grass"] {
+  background: linear-gradient(135deg, #1a4a2a 0%, #2d6b3f 40%, #1a4a2a 100%) !important;
+  border: 1px solid rgba(56,232,255,0.06);
+}
+
+.tile[data-type="grass"]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 25% 75%, rgba(56,232,255,0.08) 0%, transparent 50%),
+    radial-gradient(circle at 75% 25%, rgba(124,255,178,0.06) 0%, transparent 50%);
+}
+
+.tile[data-type="road"] {
+  background: linear-gradient(135deg, #1e2235 0%, #252a40 50%, #1e2235 100%) !important;
+  border: 1px solid rgba(56,232,255,0.08);
+}
+
+.tile[data-type="road"]::before {
+  content: '';
+  position: absolute;
+  top: 48%;
+  left: 15%;
+  right: 15%;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, rgba(255,215,106,0.4) 0px, rgba(255,215,106,0.4) 5px, transparent 5px, transparent 10px);
+}
+
+.tile[data-type="house"] {
+  background: linear-gradient(180deg, #c45b5b 0%, #8a3535 100%) !important;
+  border: 1px solid rgba(255,95,162,0.2);
+  box-shadow: inset 0 -4px 8px rgba(0,0,0,0.3);
+}
+
+.tile[data-type="house"]::before {
+  content: '🏠';
+  position: absolute;
+  font-size: 22px;
+  filter: drop-shadow(0 0 6px rgba(255,95,162,0.4));
+}
+
+.tile[data-type="park"] {
+  background: linear-gradient(135deg, #0a3a2a 0%, #1a5a4a 50%, #0a3a2a 100%) !important;
+  border: 1px solid rgba(124,255,178,0.15);
+  box-shadow: inset 0 0 20px rgba(124,255,178,0.1);
+}
+
+.tile[data-type="park"]::before {
+  content: '🌿';
+  position: absolute;
+  font-size: 20px;
+  filter: drop-shadow(0 0 4px rgba(124,255,178,0.4));
+}
+
+.tile[data-type="tree"] {
+  background: linear-gradient(180deg, #0a2a1a 0%, #1a3a2a 100%) !important;
+  border: 1px solid rgba(56,232,255,0.08);
+}
+
+.tile[data-type="tree"]::before {
+  content: '🌲';
+  position: absolute;
+  font-size: 22px;
+  filter: drop-shadow(0 0 6px rgba(56,232,255,0.3));
+}
+
+.tile[data-type="sky"] {
+  background: linear-gradient(180deg, #0a0f1a 0%, #121829 100%) !important;
+  border: 1px solid rgba(56,232,255,0.04);
+}
+
+/* ===== CHARACTERS — FLOATING ABOVE TILES ===== */
+.char-emoji {
+  font-size: 34px;
+  z-index: 3;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6)) drop-shadow(0 0 12px rgba(56,232,255,0.3));
+  transition: transform 0.2s cubic-bezier(.2,.8,.2,1);
+  position: relative;
+  animation: char-float 3s ease-in-out infinite;
+}
+
+@keyframes char-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.tile:hover .char-emoji {
+  transform: translateY(-6px) scale(1.15);
+  filter: drop-shadow(0 8px 16px rgba(0,0,0,0.6)) drop-shadow(0 0 20px rgba(56,232,255,0.5));
+}
+
+.char-mood {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  font-size: 16px;
+  z-index: 5;
+  animation: mood-bounce 2s ease-in-out infinite;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+/* Glow ring under active character */
+.tile:has(.char-emoji)::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 32px;
+  height: 6px;
+  background: radial-gradient(ellipse, rgba(56,232,255,0.3) 0%, transparent 70%);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  z-index: 0;
+}
+
+@keyframes mood-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* ===== SPEECH BUBBLES ===== */
+.speech-bubble {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15,20,35,0.95);
+  color: #eaf0ff;
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  line-height: 1.3;
+  padding: 10px 14px;
+  border-radius: 12px;
+  width: 200px;
+  z-index: 20;
+  box-shadow:
+    0 4px 20px rgba(0,0,0,0.5),
+    0 0 1px rgba(56,232,255,0.3),
+    inset 0 1px 0 rgba(56,232,255,0.1);
+  border: 1px solid rgba(56,232,255,0.15);
+  animation: bubble-in 0.35s cubic-bezier(.2,.8,.2,1);
+  word-wrap: break-word;
+  pointer-events: auto;
+}
+
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid rgba(15,20,35,0.95);
+}
+
+@keyframes bubble-in {
+  0% { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.9); }
+  70% { transform: translateX(-50%) translateY(-2px) scale(1.02); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+/* ===== FEED ===== */
+.feed-panel {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.feed-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.feed-panel::-webkit-scrollbar-track {
+  background: var(--bg-2);
+  border-radius: 3px;
+}
+
+.feed-panel::-webkit-scrollbar-thumb {
+  background: var(--neon-violet);
+  border-radius: 3px;
+}
+
+#feed {
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+/* ===== EVENT PANEL ===== */
+.event-panel {
+  position: relative;
+}
+
+.event-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  pointer-events: none;
+  opacity: 0;
+  border: 2px solid var(--neon-cyan);
+  animation: ripple 1.5s ease-out forwards;
+}
+
+@keyframes ripple {
+  0% { opacity: 0.8; transform: scale(0.95); }
+  100% { opacity: 0; transform: scale(1.02); }
+}
+
+/* ===== SHOCKWAVE RINGS ===== */
+.shockwave-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60px;
+  height: 60px;
+  margin-top: -30px;
+  margin-left: -30px;
+  border-radius: 50%;
+  border: 2px solid var(--neon-cyan);
+  pointer-events: none;
+  z-index: 60;
+  animation: shockwave-expand 1s ease-out forwards;
+}
+
+@keyframes shockwave-expand {
+  0% {
+    width: 60px;
+    height: 60px;
+    margin-top: -30px;
+    margin-left: -30px;
+    opacity: 0.8;
+    border-width: 2px;
+  }
+  100% {
+    width: 600px;
+    height: 600px;
+    margin-top: -300px;
+    margin-left: -300px;
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+/* ===== SCREEN SHAKE ===== */
+.screen-shake {
+  animation: shake 0.18s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px) translateY(1px); }
+  40% { transform: translateX(3px) translateY(-1px); }
+  60% { transform: translateX(-2px) translateY(1px); }
+  80% { transform: translateX(2px) translateY(-1px); }
+}
+
+/* ===== TYPEWRITER CURSOR ===== */
+.speech-bubble.typing::after {
+  content: '▌';
+  animation: blink-cursor 0.5s step-end infinite;
+  color: var(--neon-cyan);
+  font-size: 12px;
+  margin-left: 1px;
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* ===== BUTTONS ===== */
+button.primary, .gr-button-primary {
+  background: linear-gradient(135deg, var(--neon-cyan), var(--neon-violet)) !important;
+  color: #fff !important;
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 12px !important;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 12px 20px !important;
+  cursor: pointer !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  box-shadow: 0 0 20px rgba(56,232,255,0.3);
+  transition: all 0.25s cubic-bezier(.2,.8,.2,1) !important;
+}
+
+button.primary:hover, .gr-button-primary:hover {
+  box-shadow: 0 0 30px rgba(56,232,255,0.5), 0 0 60px rgba(155,107,255,0.3) !important;
+  transform: translateY(-2px) !important;
+}
+
+button.primary:active, .gr-button-primary:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 0 15px rgba(56,232,255,0.4) !important;
+}
+
+.gr-button {
+  background: var(--bg-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--stroke) !important;
+  border-radius: 10px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  transition: all 0.25s cubic-bezier(.2,.8,.2,1) !important;
+}
+
+.gr-button:hover {
+  border-color: var(--neon-violet) !important;
+  box-shadow: 0 0 15px rgba(155,107,255,0.2) !important;
+}
+
+/* ===== INPUTS ===== */
+.gr-textbox textarea, .gr-input {
+  background: var(--bg-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--stroke) !important;
+  border-radius: 10px !important;
+  font-family: 'VT323', monospace !important;
+  font-size: 18px !important;
+  transition: border-color 0.25s ease !important;
+}
+
+.gr-textbox textarea:focus, .gr-input:focus {
+  border-color: var(--neon-cyan) !important;
+  box-shadow: 0 0 12px rgba(56,232,255,0.2) !important;
+  outline: none !important;
+}
+
+.gr-textbox textarea::placeholder {
+  color: var(--muted) !important;
+}
+
+/* ===== AUDIO ===== */
+.gr_audio, audio {
+  border-radius: 10px !important;
+}
+
+/* ===== VOICE PANEL ===== */
+.voice-panel {
+  position: relative;
+}
+
+/* ===== DROPDOWN ===== */
+.gr-dropdown {
+  background: var(--bg-2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--stroke) !important;
+  border-radius: 10px !important;
+}
+
+/* ===== FOOTER ===== */
+.tw-footer {
+  text-align: center;
+  padding: 20px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--stroke);
+  margin-top: 16px;
+  line-height: 1.8;
+}
+
+.tw-footer strong {
+  color: var(--neon-cyan);
+}
+
+/* ===== SHIMMER LOADING ===== */
+.shimmer {
+  background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-1) 50%, var(--bg-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ===== PROGRESSION TICKER ===== */
+.progress-ticker {
+  text-align: center;
+  padding: 8px 16px;
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+.ticker-day {
+  color: var(--neon-cyan);
+  font-weight: bold;
+}
+
+.ticker-sep {
+  margin: 0 8px;
+  opacity: 0.4;
+}
+
+.ticker-events {
+  color: var(--text);
+}
+
+.ticker-chaos {
+  color: var(--neon-violet);
+}
+
+/* ===== RECAP CARD ===== */
+.recap-card {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  padding: 16px;
+  margin: 8px auto;
+  max-width: 500px;
+  text-align: center;
+}
+
+.recap-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 12px;
+  color: var(--neon-pink);
+  text-shadow: 0 0 8px rgba(255,95,162,0.4);
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+}
+
+.recap-event {
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: var(--muted);
+  margin-bottom: 12px;
+  font-style: italic;
+}
+
+.recap-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(120,160,255,0.1);
+}
+
+.recap-row:last-of-type {
+  border-bottom: none;
+}
+
+.recap-emoji {
+  font-size: 20px;
+}
+
+.recap-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: var(--neon-cyan);
+  min-width: 60px;
+  text-align: left;
+}
+
+.recap-mood {
+  font-size: 16px;
+}
+
+.recap-text {
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  color: var(--text);
+  text-align: left;
+  flex: 1;
+}
+
+.recap-empty {
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: var(--muted);
+  padding: 20px;
+}
+
+.recap-footer {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 10px;
+  opacity: 0.6;
+  border-top: 1px solid var(--stroke);
+  padding-top: 8px;
+}
+
+/* ===== ROSTER HUD ===== */
+.roster-rail {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 12px 8px;
+  flex-wrap: wrap;
+}
+
+.roster-card {
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 10px 14px;
+  min-width: 110px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(.2,.8,.2,1);
+}
+
+.roster-card:hover {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 20px rgba(56,232,255,0.2);
+  transform: translateY(-2px);
+}
+
+.roster-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--neon-cyan), var(--neon-violet));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.roster-card:hover::before {
+  opacity: 1;
+}
+
+.roster-emoji {
+  font-size: 28px;
+  margin-bottom: 2px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+}
+
+.roster-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 6px rgba(56,232,255,0.3);
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+}
+
+.roster-mood {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.vibe-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0;
+}
+
+.vibe-label {
+  font-size: 10px;
+  width: 14px;
+  text-align: center;
+}
+
+.vibe-track {
+  flex: 1;
+  height: 5px;
+  background: var(--bg-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.vibe-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s cubic-bezier(.2,.8,.2,1);
+}
+
+.vibe-val {
+  font-family: 'VT323', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  width: 20px;
+  text-align: right;
+}
+
+/* ===== ACTIVE SPEAKER GLOW ===== */
+.tile.speaking {
+  box-shadow: 0 0 20px var(--neon-cyan), 0 0 40px rgba(56,232,255,0.3);
+  border-radius: 4px;
+  z-index: 15;
+}
+
+.tile.speaking .char-emoji {
+  animation: speaker-pulse 1s ease-in-out infinite;
+}
+
+@keyframes speaker-pulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4)); }
+  50% { transform: scale(1.15); filter: drop-shadow(0 0 12px var(--neon-cyan)); }
+}
+
+/* ===== VIBE METER TICK ===== */
+.vibe-fill.ticked {
+  animation: meter-flash 0.6s ease-out;
+}
+
+@keyframes meter-flash {
+  0% { filter: brightness(1.8); }
+  100% { filter: brightness(1); }
+}
+
+.vibe-val.changed {
+  animation: val-glow 0.8s ease-out;
+  color: var(--neon-lime) !important;
+}
+
+@keyframes val-glow {
+  0% { text-shadow: 0 0 8px var(--neon-lime); transform: scale(1.3); }
+  100% { text-shadow: none; transform: scale(1); }
+}
+
+/* ===== IDLE STATE ===== */
+.idle-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 25;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.idle-overlay.visible {
+  opacity: 1;
+}
+
+.idle-text {
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  color: var(--muted);
+  text-align: center;
+  animation: idle-breathe 3s ease-in-out infinite;
+}
+
+@keyframes idle-breathe {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.9; }
+}
+
+/* ===== BUTTON SQUISH ===== */
+button:active, .gr-button:active {
+  transform: scale(0.95) !important;
+}
+
+/* ===== LOADING STATE ===== */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11,15,26,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.loading-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.loading-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  color: var(--neon-cyan);
+  animation: loading-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes loading-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 900px) {
+  .tw-logo {
+    font-size: 18px;
+  }
+
+  .tw-tagline {
+    font-size: 16px;
+  }
+
+  .char-emoji {
+    font-size: 26px;
+  }
+
+  .speech-bubble {
+    width: 150px;
+    font-size: 12px;
+    padding: 6px 8px;
+  }
+
+  .tile {
+    min-height: 38px;
+  }
+
+  .roster-rail {
+    gap: 4px;
+    padding: 8px 4px;
+  }
+
+  .roster-card {
+    min-width: 80px;
+    padding: 6px 8px;
+  }
+
+  .roster-emoji {
+    font-size: 22px;
+  }
+
+  .roster-name {
+    font-size: 6px;
+  }
+
+  .progress-ticker {
+    font-size: 14px;
+    padding: 6px 8px;
+  }
+
+  .recap-card {
+    padding: 10px;
+    margin: 4px;
+  }
+
+  .recap-name {
+    font-size: 6px;
+    min-width: 40px;
+  }
+
+  .recap-text {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 600px) {
+  .tw-logo {
+    font-size: 14px;
+    letter-spacing: 1px;
+  }
+
+  .tw-tagline {
+    font-size: 13px;
+  }
+
+  .glass-panel {
+    padding: 10px;
+    margin: 4px;
+  }
+
+  .panel-title {
+    font-size: 9px;
+  }
+
+  .tw-map {
+    transform: perspective(600px) rotateX(8deg);
+    margin: 5px auto;
+  }
+
+  .roster-card {
+    min-width: 60px;
+    padding: 4px 6px;
+  }
+
+  .roster-emoji {
+    font-size: 18px;
+  }
+
+  .roster-mood {
+    font-size: 11px;
+  }
+
+  .vibe-track {
+    height: 3px;
+  }
+
+  .speech-bubble {
+    width: 120px;
+    font-size: 11px;
+    padding: 4px 6px;
+  }
+
+  .char-emoji {
+    font-size: 22px;
+  }
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-0);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neon-violet);
+}
+
+/* ===== GRADIO OVERRIDES ===== */
+.gradio-container .wrap {
+  max-width: 1400px !important;
+}
+
+.container {
+  max-width: 1400px !important;
+}
+
+.row {
+  gap: 0 !important;
+}
+
+/* Fix Gradio label text color */
+label {
+  color: var(--muted) !important;
+}
+
+/* Fix block backgrounds */
+.gr-block {
+  background: transparent !important;
+}
+
+
+body {
+  background: #0b0f1a;
+  padding: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+.section-label {
+  font-family: "Press Start 2P", monospace;
+  font-size: 9px;
+  color: #38e8ff;
+  margin: 20px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 0 0 8px rgba(56,232,255,0.4);
+}
+
+.feed-box {
+  background: rgba(20,28,48,0.55);
+  border: 1px solid rgba(120,160,255,0.18);
+  border-radius: 14px;
+  padding: 16px;
+  font-family: "VT323", monospace;
+  font-size: 15px;
+  color: #eaf0ff;
+  line-height: 1.6;
+  backdrop-filter: blur(12px);
+}
+
+.event-panel-demo {
+  background: rgba(20,28,48,0.55);
+  border: 1px solid rgba(120,160,255,0.18);
+  border-radius: 14px;
+  padding: 16px;
+  margin: 8px 0;
+  backdrop-filter: blur(12px);
+}
+
+.event-input-demo {
+  width: 100%;
+  background: #1b2235;
+  color: #eaf0ff;
+  border: 1px solid rgba(120,160,255,0.18);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-family: "VT323", monospace;
+  font-size: 18px;
+  outline: none;
+  transition: border-color 0.25s ease;
+}
+
+.event-input-demo:focus {
+  border-color: #38e8ff;
+  box-shadow: 0 0 12px rgba(56,232,255,0.2);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #38e8ff, #9b6bff);
+  color: #fff;
+  font-family: "Press Start 2P", monospace;
+  font-size: 11px;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 24px;
+  cursor: pointer;
+  box-shadow: 0 0 20px rgba(56,232,255,0.3);
+  transition: all 0.25s ease;
+  margin-top: 10px;
+}
+
+.btn-primary:hover {
+  box-shadow: 0 0 30px rgba(56,232,255,0.5), 0 0 60px rgba(155,107,255,0.3);
+  transform: translateY(-2px);
+}
+
+.btn-primary:active {
+  transform: scale(0.95);
+}
+</style>
+</head>
+<body>
+
+<div class="tw-header">
+  <div class="tw-logo">🏘️ TINYWORLD</div>
+  <div class="tw-tagline">Throw an event. Watch the neighborhood react.</div>
+  <div class="tw-credits">Models: MiniCPM5-1B (×5) · VoxCPM2 · Cohere Transcribe · Modal</div>
+</div>
+
+<div class="section-label">▸ PROGRESSION TICKER</div>
+<div class="progress-ticker"><span class="ticker-day">Day 1</span><span class="ticker-sep">·</span><span class="ticker-events">3 events</span><span class="ticker-sep">·</span><span class="ticker-chaos">Chaos ███▯▯</span></div>
+
+<div class="section-label">▸ CHARACTER ROSTER</div>
+<div class="roster-rail"><div class="roster-card"><div class="roster-emoji">🧓</div><div class="roster-name">Marta</div><div class="roster-mood">🫣 embarrassed</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:51.839999999999996%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">51.839999999999996</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:51.839999999999996%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">51.839999999999996</span></div></div><div class="roster-card"><div class="roster-emoji">🚴</div><div class="roster-name">Jay</div><div class="roster-mood">🧐 curious</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:65.75999999999999%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">65.75999999999999</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:69.88%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">69.88</span></div></div><div class="roster-card"><div class="roster-emoji">🚑</div><div class="roster-name">Nia</div><div class="roster-mood">😴 tired</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:32.08%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">32.08</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:36.84%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">36.84</span></div></div><div class="roster-card"><div class="roster-emoji">🧒</div><div class="roster-name">Luca</div><div class="roster-mood">😴 tired</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:49.08%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">49.08</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:46.04%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">46.04</span></div></div><div class="roster-card"><div class="roster-emoji">👩‍💼</div><div class="roster-name">Priya</div><div class="roster-mood">😤 proud</div><div class="vibe-row"><span class="vibe-label">⚡</span><div class="vibe-track"><div class="vibe-fill" style="width:75.4%;background:linear-gradient(90deg,#ff6b6b,#ff9999)"></div></div><span class="vibe-val">75.4</span></div><div class="vibe-row"><span class="vibe-label">💬</span><div class="vibe-track"><div class="vibe-fill" style="width:63.48%;background:linear-gradient(90deg,#38e8ff,#9b6bff)"></div></div><span class="vibe-val">63.48</span></div></div></div>
+
+<div class="section-label">▸ NEIGHBORHOOD MAP</div>
+<div class="glass-panel map-panel">
+<div class="tw-map"><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="sky" style="background-color:#87ceeb"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="house" style="background-color:#c45b5b"><div class="char-mood" title="embarrassed">🫣</div><div class="char-emoji">🧓</div><div class="speech-bubble">Oh no. Please tell me nobody saw me react to that.</div></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="tree" style="background-color:#2f7d46"><div class="tile-icon">🌲</div></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="park" style="background-color:#7CFFB2"><div class="tile-icon">🌿</div></div><div class="tile" data-type="park" style="background-color:#7CFFB2"><div class="char-mood" title="tired">😴</div><div class="char-emoji">🧒</div><div class="speech-bubble">Can... can this wait? I was up until 2am researching neighborhood legends.</div></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="tree" style="background-color:#2f7d46"><div class="tile-icon">🌲</div></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"><div class="char-mood" title="curious">🧐</div><div class="char-emoji">🚴</div><div class="speech-bubble">Something's up. I ride through here every day and I notice things.</div></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="tree" style="background-color:#2f7d46"><div class="tile-icon">🌲</div></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="house" style="background-color:#c45b5b"><div class="tile-icon">🏠</div></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="house" style="background-color:#c45b5b"><div class="tile-icon">🏠</div></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"><div class="char-mood" title="tired">😴</div><div class="char-emoji">🚑</div><div class="speech-bubble">I've seen worse. Much worse. But I'd rather be sleeping right now.</div></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="tree" style="background-color:#2f7d46"><div class="tile-icon">🌲</div></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"><div class="char-mood" title="proud">😤</div><div class="char-emoji">👩‍💼</div><div class="speech-bubble">This is exactly the kind of thing I've been working toward. You're welcome.</div></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="road" style="background-color:#6f7790"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="tree" style="background-color:#2f7d46"><div class="tile-icon">🌲</div></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div><div class="tile" data-type="grass" style="background-color:#5a8a3c"></div></div><div class="idle-overlay "><div class="idle-text">The neighborhood is quiet...<br>throw an event to see what happens!</div></div>
+</div>
+
+<div class="section-label">▸ EVENT CONSOLE</div>
+<div class="event-panel-demo">
+  <input class="event-input-demo" placeholder="Throw an event at the neighborhood…" disabled>
+  <button class="btn-primary" onclick="alert('Connect to live server to trigger events!')">⚡ Trigger</button>
+</div>
+
+<div class="section-label">▸ NEIGHBORHOOD FEED</div>
+<div class="feed-box">🧓 **Marta Voss** (🫣 embarrassed): "Oh no. Please tell me nobody saw me react to that."<br><br>🚴 **Jay Park** (🧐 curious): "Something's up. I ride through here every day and I notice things."<br><br>🚑 **Nia Okafor** (😴 tired): "I've seen worse. Much worse. But I'd rather be sleeping right now."<br><br>🧒 **Luca Bell** (😴 tired): "Can... can this wait? I was up until 2am researching neighborhood legends."<br><br>👩‍💼 **Priya Raman** (😤 proud): "This is exactly the kind of thing I've been working toward. You're welcome."</div>
+
+<div class="section-label">▸ 📸 TODAY IN TINYWORLD</div>
+<div class="recap-card"><div class="recap-title">📸 TODAY IN TINYWORLD</div><div class="recap-event">Event: "A stray cat starts following people around"</div><div class="recap-row"><span class="recap-emoji">🧓</span><span class="recap-name">Marta Voss</span><span class="recap-mood">🫣</span><div class="recap-text">"Oh no. Please tell me nobody saw me react to that."</div></div><div class="recap-row"><span class="recap-emoji">🚴</span><span class="recap-name">Jay Park</span><span class="recap-mood">🧐</span><div class="recap-text">"Something's up. I ride through here every day and I notice things."</div></div><div class="recap-row"><span class="recap-emoji">👩‍💼</span><span class="recap-name">Priya Raman</span><span class="recap-mood">😤</span><div class="recap-text">"This is exactly the kind of thing I've been working toward. You're welcome."</div></div><div class="recap-footer">TinyWorld · Build Small Hackathon 2026</div></div>
+
+<div class="tw-footer">
+  Built for <strong>Build Small Hackathon 2026</strong> · Hugging Face × Gradio · Thousand Token Wood track<br>
+  Sponsor models: <strong>OpenBMB</strong> (MiniCPM5-1B, VoxCPM2) · <strong>Cohere</strong> (Transcribe) · <strong>Modal</strong> (serverless inference)
+</div>
+
+<script>
+// TinyWorld — map polish JS
+// Shockwave, screen-shake, staggered bubbles, typewriter, bubble auto-dismiss
+
+(function () {
+  const BUBBLE_LIFETIME_MS = 8000;
+  const STAGGER_DELAY_MS = 80;
+
+  /* ── Shockwave ring on trigger ── */
+  function triggerShockwave() {
+    var mapEl = document.querySelector('.tw-map');
+    if (!mapEl) return;
+
+    // Create two concentric rings for depth
+    for (var i = 0; i < 2; i++) {
+      var ring = document.createElement('div');
+      ring.className = 'shockwave-ring';
+      if (i === 1) ring.style.animationDelay = '0.15s';
+      mapEl.appendChild(ring);
+      (function (el) {
+        setTimeout(function () { el.remove(); }, 1200);
+      })(ring);
+    }
+
+    // Screen-shake
+    document.body.classList.add('screen-shake');
+    setTimeout(function () {
+      document.body.classList.remove('screen-shake');
+    }, 180);
+  }
+
+  /* ── Staggered bubble spring-in + typewriter ── */
+  function animateBubbles() {
+    var bubbles = document.querySelectorAll('.speech-bubble');
+    var index = 0;
+    bubbles.forEach(function (b) {
+      if (b.dataset.animated) return;
+      b.dataset.animated = '1';
+
+      b.style.opacity = '0';
+      b.style.transform = 'translateX(-50%) translateY(8px) scale(0.9)';
+      var delay = index * STAGGER_DELAY_MS;
+      index++;
+
+      setTimeout(function () {
+        b.style.transition = 'opacity 0.3s ease, transform 0.35s cubic-bezier(.2,.8,.2,1)';
+        b.style.opacity = '1';
+        b.style.transform = 'translateX(-50%) translateY(0) scale(1)';
+
+        typewriterReveal(b);
+      }, delay);
+    });
+  }
+
+  function typewriterReveal(bubble) {
+    var textNode = bubble.firstChild;
+    if (!textNode || textNode.nodeType !== 3) return;
+
+    var fullText = textNode.textContent;
+    if (fullText.length < 3) return;
+
+    textNode.textContent = '';
+    var charIndex = 0;
+    var speed = Math.max(12, Math.min(30, 600 / fullText.length));
+
+    function typeNext() {
+      if (charIndex < fullText.length) {
+        textNode.textContent += fullText[charIndex];
+        charIndex++;
+        setTimeout(typeNext, speed);
+      }
+    }
+    typeNext();
+  }
+
+  /* ── Bubble auto-dismiss ── */
+  function dismissOldBubbles() {
+    var bubbles = document.querySelectorAll('.speech-bubble');
+    bubbles.forEach(function (b) {
+      if (!b.dataset.spawned) {
+        b.dataset.spawned = Date.now();
+      }
+      var age = Date.now() - parseInt(b.dataset.spawned, 10);
+      if (age > BUBBLE_LIFETIME_MS) {
+        b.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+        b.style.opacity = '0';
+        b.style.transform = 'translateX(-50%) translateY(8px) scale(0.9)';
+        setTimeout(function () { b.remove(); }, 500);
+      }
+    });
+  }
+
+  setInterval(dismissOldBubbles, 1000);
+
+  /* ── Observer: detect new bubbles → animate + shockwave ── */
+  var isFirstRender = true;
+
+  var observer = new MutationObserver(function (mutations) {
+    var hasNewBubbles = false;
+    for (var m = 0; m < mutations.length; m++) {
+      var nodes = mutations[m].addedNodes;
+      for (var n = 0; n < nodes.length; n++) {
+        var node = nodes[n];
+        if (node.nodeType === 1) {
+          if (node.classList && node.classList.contains('speech-bubble')) {
+            hasNewBubbles = true;
+          }
+          if (node.querySelector && node.querySelector('.speech-bubble')) {
+            hasNewBubbles = true;
+          }
+        }
+      }
+    }
+
+    if (hasNewBubbles) {
+      if (!isFirstRender) {
+        triggerShockwave();
+      }
+      isFirstRender = false;
+      setTimeout(animateBubbles, 50);
+
+      // Hide idle overlay when bubbles appear
+      var idle = document.querySelector('.idle-overlay');
+      if (idle) idle.classList.remove('visible');
+    }
+  });
+
+  /* ── Active-speaker glow ── */
+  function highlightSpeaker(name) {
+    // Remove previous glow
+    var prev = document.querySelector('.tile.speaking');
+    if (prev) prev.classList.remove('speaking');
+
+    // Find character tile by matching emoji text
+    var tiles = document.querySelectorAll('.tile');
+    tiles.forEach(function (tile) {
+      var nameEl = tile.querySelector('.char-emoji');
+      if (nameEl && nameEl.textContent.trim()) {
+        // Match by position in roster order
+        var moodEl = tile.querySelector('.char-mood');
+        if (moodEl && moodEl.title) {
+          // Use the mood title as a proxy — we'll match by grid position instead
+        }
+      }
+    });
+  }
+
+  // Watch for audio element changes (auto-play voice)
+  var audioObserver = new MutationObserver(function (mutations) {
+    for (var m = 0; m < mutations.length; m++) {
+      var target = mutations[m].target;
+      if (target.tagName === 'AUDIO' && target.src) {
+        // Voice is playing — could highlight speaker here
+        break;
+      }
+    }
+  });
+
+  function watchAudio() {
+    var audioEls = document.querySelectorAll('audio');
+    audioEls.forEach(function (a) {
+      audioObserver.observe(a, { attributes: true, attributeFilter: ['src'] });
+    });
+  }
+
+  setTimeout(watchAudio, 1000);
+
+  function watchMap() {
+    var mapEl = document.querySelector('.tw-map');
+    if (mapEl) {
+      observer.observe(mapEl, { childList: true, subtree: true });
+    } else {
+      setTimeout(watchMap, 500);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', watchMap);
+  } else {
+    watchMap();
+  }
+})();
+
+</script>
+</body></html>

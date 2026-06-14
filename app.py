@@ -1,431 +1,414 @@
 import os
+import json
+import time
 import random
 import gradio as gr
 import agents
 import voice
 import transcribe
 import events
-import characters as chars
-from unpredictability import get_mood, reroll_mood, maybe_form_reflection
+import world_state
+from worlds import get_world, WORLDS, list_worlds
 
 MOCK = os.environ.get("TINYWORLD_MOCK", "0") == "1"
 
-MOOD_ENERGY = {
-    "happy": 80, "excited": 90, "proud": 75, "curious": 70,
-    "stressed": 40, "bored": 30, "tired": 20, "hungry": 45,
-    "nostalgic": 55, "embarrassed": 50,
-}
-MOOD_SOCIAL = {
-    "happy": 85, "excited": 80, "curious": 75, "proud": 60,
-    "nostalgic": 65, "stressed": 35, "bored": 25, "tired": 30,
-    "hungry": 40, "embarrassed": 45,
-}
-
-_vibes = {c["name"]: {"energy": 60, "social": 60} for c in chars.CHARACTERS}
-_event_count = 0
-_chaos_level = 0
-
-EMOJI = {
-    "Marta Voss": "🧓",
-    "Jay Park": "🚴",
-    "Nia Okafor": "🚑",
-    "Luca Bell": "🧒",
-    "Priya Raman": "👩‍💼",
-}
-
-HOME = {
-    "Marta Voss": (1, 1),
-    "Jay Park": (3, 9),
-    "Nia Okafor": (5, 2),
-    "Luca Bell": (2, 6),
-    "Priya Raman": (6, 7),
-}
-
-TILES = [
-    ["sky","sky","sky","sky","sky","sky","sky","sky","sky","sky","sky","sky"],
-    ["grass","house","grass","road","grass","grass","tree","grass","grass","road","grass","grass"],
-    ["grass","grass","grass","road","grass","park","park","grass","grass","road","grass","tree"],
-    ["road","road","road","road","road","road","road","road","road","road","road","road"],
-    ["grass","tree","grass","road","grass","grass","house","grass","grass","road","grass","grass"],
-    ["grass","house","grass","road","grass","grass","grass","grass","grass","road","grass","tree"],
-    ["road","road","road","road","road","road","road","road","road","road","road","road"],
-    ["grass","grass","grass","grass","grass","grass","grass","tree","grass","grass","grass","grass"],
-]
-
-TILE_COLORS = {
-    "sky": "#87ceeb",
-    "grass": "#5a8a3c",
-    "road": "#6f7790",
-    "house": "#c45b5b",
-    "park": "#7CFFB2",
-    "tree": "#2f7d46",
-}
-
-TILE_ICONS = {
-    "sky": "",
-    "grass": "",
-    "road": "",
-    "house": "🏠",
-    "park": "🌿",
-    "tree": "🌲",
-}
-
 MOOD_EMOJI = {
-    "happy": "😊",
-    "stressed": "😰",
-    "bored": "😐",
-    "excited": "🤩",
-    "hungry": "🍕",
-    "tired": "😴",
-    "nostalgic": "🥹",
-    "curious": "🧐",
-    "proud": "😤",
-    "embarrassed": "🫣",
+    "happy": "😊", "stressed": "😰", "bored": "😐", "excited": "🤩",
+    "hungry": "🍕", "tired": "😴", "nostalgic": "🥹", "curious": "🧐",
+    "proud": "😤", "embarrassed": "🫣",
 }
 
 VIBE_COLORS = {
-    "energy": ("#ff6b6b", "#ff9999"),
+    "energy": ("#ff6b6b", "#ffb15f"),
     "social": ("#38e8ff", "#9b6bff"),
 }
 
+CHAR_COLORS = {
+    "Marta Voss": "#ff5fa2", "Jay Park": "#ff8a5f", "Nia Okafor": "#7CFFB2",
+    "Luca Bell": "#38e8ff", "Priya Raman": "#9b6bff",
+}
+PALETTE = ["#ff5fa2", "#ff8a5f", "#7CFFB2", "#38e8ff", "#9b6bff"]
 
+
+def char_color(world, name):
+    for i, c in enumerate(world["cast"]):
+        if c["name"] == name:
+            return c.get("color") or CHAR_COLORS.get(name) or PALETTE[i % len(PALETTE)]
+    return "#9b6bff"
+
+
+# ---------------------------------------------------------------- canvas payloads
+def build_world_payload(world_id):
+    world = get_world(world_id)
+    board = world["board"]
+    cast = []
+    for c in world["cast"]:
+        home_key = c.get("home", "square")
+        tile = board["hotspots_tile"].get(home_key, [6, 6])
+        cast.append({
+            "name": c["name"], "short": c["name"].split()[0],
+            "emoji": c.get("emoji", "👤"),
+            "color": char_color(world, c["name"]),
+            "home": tile,
+        })
+    payload = {
+        "cols": board["cols"], "rows": board["rows"],
+        "roads": board["roads"], "plaza": board["plaza"],
+        "plaza_center": board.get("plaza_center", [board["cols"] / 2, board["rows"] / 2]),
+        "buildings": board["buildings"], "trees": board.get("trees", []),
+        "props": board.get("props", []), "cast": cast,
+        "hotspots": board.get("hotspots_tile", {}), "ambient": board.get("ambient", 12),
+    }
+    return json.dumps(payload)
+
+
+def build_reactions_payload(world_id, reactions):
+    world = get_world(world_id)
+    board = world["board"]
+    hs = board["hotspots_tile"]
+    acts = board.get("activities", {})
+    cols, rows = board["cols"], board["rows"]
+    pc = board.get("plaza_center", [cols / 2, rows / 2])
+    edges = [[1, 1], [cols - 2, 1], [1, rows - 2], [cols - 2, rows - 2],
+             [cols // 2, 1], [1, rows // 2], [cols - 2, rows // 2], [cols // 2, rows - 2]]
+    pool = list(hs.values()) + edges
+    random.shuffle(pool)
+    # randomize how the town responds: sometimes everyone gathers, usually they scatter
+    mode = random.choice(["gather", "scatter", "scatter", "mixed"])
+    out = {"ts": time.time(), "reactions": []}
+    for i, r in enumerate(reactions):
+        name = r["name"]
+        key = r.get("moved_to")
+        act = acts.get(name, {})
+        action = (r.get("action") or "").strip()
+        short_action = (action[:24].rstrip() + "…") if len(action) > 25 else action
+        label = short_action or act.get("label", "")
+        vehicle = act.get("vehicle", "")
+        if key and key in hs:                                   # agent explicitly chose a spot
+            tgt = hs[key]
+        elif mode == "gather":                                  # everyone converges on the square
+            tgt = [round(pc[0] + random.uniform(-2.2, 2.2), 1), round(pc[1] + random.uniform(-2.2, 2.2), 1)]
+        elif random.random() < 0.45 and act.get("tile"):        # in-character haunt
+            tgt = act["tile"]
+        else:                                                   # scatter across the map
+            tgt = pool[i % len(pool)]
+        out["reactions"].append({
+            "name": name, "short": name.split()[0],
+            "mood": r["mood"], "moodEmoji": MOOD_EMOJI.get(r["mood"], "😐"),
+            "text": r["text"], "target": tgt, "activity": label, "vehicle": vehicle,
+            "running": random.random() < 0.5,
+        })
+    return json.dumps(out)
+
+
+# ---------------------------------------------------------------- roster / ticker / log
 def render_vibe_bar(label, value, colors):
     c1, c2 = colors
+    pct = int(value * 100)
     return (
-        f'<div class="vibe-row">'
-        f'<span class="vibe-label">{label}</span>'
-        f'<div class="vibe-track">'
-        f'<div class="vibe-fill" style="width:{value}%;background:linear-gradient(90deg,{c1},{c2})"></div>'
-        f'</div>'
-        f'<span class="vibe-val">{value}</span>'
-        f'</div>'
+        f'<div class="vibe-row"><span class="vibe-label">{label}</span>'
+        f'<div class="vibe-track"><div class="vibe-fill" style="width:{pct}%;'
+        f'background:linear-gradient(90deg,{c1},{c2});color:{c1}"></div></div>'
+        f'<span class="vibe-val">{pct}</span></div>'
     )
 
 
-def render_roster():
+def render_roster(world_id):
+    world = get_world(world_id)
+    world_state.init_cast(world)
+    state = world_state.get_state(world_id)
+    vibes = world_state.get_vibes(world_id)
     cards = []
-    for c in chars.CHARACTERS:
+    for c in world["cast"]:
         name = c["name"]
-        mood = get_mood(name)
+        mood = state["moods"].get(name, "curious")
         mood_e = MOOD_EMOJI.get(mood, "😐")
-        char_e = EMOJI.get(name, "👤")
-        v = _vibes[name]
-        energy_bar = render_vibe_bar("⚡", v["energy"], VIBE_COLORS["energy"])
-        social_bar = render_vibe_bar("💬", v["social"], VIBE_COLORS["social"])
+        v = vibes.get(name, {"energy": 0.5, "social": 0.5})
         cards.append(
-            f'<div class="roster-card">'
-            f'<div class="roster-emoji">{char_e}</div>'
+            f'<div class="roster-card" style="border-left-color:{char_color(world, name)}">'
+            f'<div class="roster-emoji">{c.get("emoji", "👤")}</div>'
             f'<div class="roster-name">{name.split()[0]}</div>'
             f'<div class="roster-mood">{mood_e} {mood}</div>'
-            f'{energy_bar}{social_bar}'
+            f'<div class="roster-meters">{render_vibe_bar("⚡", v["energy"], VIBE_COLORS["energy"])}'
+            f'{render_vibe_bar("💬", v["social"], VIBE_COLORS["social"])}</div>'
             f'</div>'
         )
     return f'<div class="roster-rail">{"".join(cards)}</div>'
 
 
-def render_chaos_meter():
-    global _event_count, _chaos_level
-    filled = min(_chaos_level, 5)
-    empty = 5 - filled
-    bar = "█" * filled + "▯" * empty
-    unlocked = " 🔓 CHAOS UNLOCKED!" if _chaos_level >= 5 else ""
+def render_ticker(world_id):
+    state = world_state.get_state(world_id)
+    chaos = state["chaos"]
+    filled = min(int(chaos * 5), 5)
+    bar = "▰" * filled + "▱" * (5 - filled)
+    unlocked = " 🔓" if chaos >= 0.5 else ""
     return (
         f'<div class="progress-ticker">'
-        f'<span class="ticker-day">Day {(_event_count // 5) + 1}</span>'
-        f'<span class="ticker-sep">·</span>'
-        f'<span class="ticker-events">{_event_count} events</span>'
-        f'<span class="ticker-sep">·</span>'
-        f'<span class="ticker-chaos">Chaos {bar}</span>'
-        f'{unlocked}'
-        f'</div>'
+        f'<span class="ticker-day">DAY {state["day"]}</span><span class="ticker-sep">·</span>'
+        f'<span class="ticker-events">⚡ {state["event_count"]}</span><span class="ticker-sep">·</span>'
+        f'<span class="ticker-chaos">CHAOS {bar}{unlocked}</span></div>'
     )
 
 
-def render_recap(last_reactions, event_text):
-    if not last_reactions:
-        return '<div class="recap-card"><div class="recap-title">📸 TODAY IN TINYWORLD</div><div class="recap-empty">Throw an event to create a recap!</div></div>'
-    top3 = sorted(last_reactions, key=lambda r: r["drama"], reverse=True)[:3]
+def render_town_log(world_id, reactions=None, followup=None):
+    world = get_world(world_id)
+    if not reactions:
+        return ('<div class="town-log-inner"><div class="town-log-empty">'
+                'The town log is empty.<br>Throw an event to start the story.</div></div>')
     lines = []
-    for r in top3:
-        emoji = EMOJI.get(r["name"], "👤")
-        mood_e = MOOD_EMOJI.get(r["mood"], "😐")
-        lines.append(
-            f'<div class="recap-row">'
-            f'<span class="recap-emoji">{emoji}</span>'
-            f'<span class="recap-name">{r["name"]}</span>'
-            f'<span class="recap-mood">{mood_e}</span>'
-            f'<div class="recap-text">"{r["text"][:100]}"</div>'
-            f'</div>'
-        )
-    event_short = event_text[:60] + ("..." if len(event_text) > 60 else "")
-    return (
-        f'<div class="recap-card">'
-        f'<div class="recap-title">📸 TODAY IN TINYWORLD</div>'
-        f'<div class="recap-event">Event: "{event_short}"</div>'
-        f'{"".join(lines)}'
-        f'<div class="recap-footer">TinyWorld · Build Small Hackathon 2026</div>'
-        f'</div>'
-    )
-
-
-def render_map(reactions=None):
-    reactions_by_name = {}
-    if reactions:
-        for r in reactions:
-            reactions_by_name[r["name"]] = r
-
-    tiles_html = ""
-    for row_idx, row in enumerate(TILES):
-        for col_idx, tile in enumerate(row):
-            color = TILE_COLORS.get(tile, "#5a8a3c")
-            icon = TILE_ICONS.get(tile, "")
-
-            char_name = None
-            for name, (r, c) in HOME.items():
-                if r == row_idx and c == col_idx:
-                    char_name = name
-                    break
-
-            content = ""
-            if char_name:
-                mood = get_mood(char_name)
-                mood_emoji = MOOD_EMOJI.get(mood, "😐")
-                char_emoji = EMOJI.get(char_name, "👤")
-                content = f'<div class="char-mood" title="{mood}">{mood_emoji}</div><div class="char-emoji">{char_emoji}</div>'
-
-                if char_name in reactions_by_name:
-                    rx = reactions_by_name[char_name]
-                    bubble_text = rx["text"][:120] + ("..." if len(rx["text"]) > 120 else "")
-                    content += f'<div class="speech-bubble">{bubble_text}</div>'
-            elif icon:
-                content = f'<div class="tile-icon">{icon}</div>'
-
-            tiles_html += f'<div class="tile" style="background-color:{color}">{content}</div>'
-
-    idle_class = "visible" if not reactions else ""
-    return f'<div class="tw-map">{tiles_html}</div><div class="idle-overlay {idle_class}"><div class="idle-text">The neighborhood is quiet...<br>throw an event to see what happens!</div></div>'
-
-
-def render_initial_map():
-    return render_map(None)
-
-
-def trigger_event(event_text):
-    if not event_text or not event_text.strip():
-        return render_map(None), "", None, gr.update()
-
-    reactions = agents.react(event_text.strip())
-
-    top = max(reactions, key=lambda r: r["drama"])
-    audio = None
-    try:
-        char_data = next(c for c in chars.CHARACTERS if c["name"] == top["name"])
-        audio = voice.generate_voice(top["text"], char_data["voice_description"])
-    except Exception as e:
-        print(f"[app] voice generation failed: {e}")
-
-    feed_lines = []
     for r in reactions:
-        emoji = EMOJI.get(r["name"], "👤")
-        mood_e = MOOD_EMOJI.get(r["mood"], "😐")
-        feed_lines.append(f'{emoji} **{r["name"]}** ({mood_e} {r["mood"]}): "{r["text"]}"')
-    feed_text = "\n\n".join(feed_lines)
-
-    names = [r["name"] for r in reactions]
-
-    return (
-        render_map(reactions),
-        feed_text,
-        audio,
-        gr.update(choices=names, value=names[0] if names else None),
-    )
-
-
-def random_chaos():
-    return events.random_event()
-
-
-def transcribe_audio(audio_path):
-    if not audio_path:
-        return ""
-    return transcribe.transcribe(audio_path)
+        char = next((c for c in world["cast"] if c["name"] == r["name"]), None)
+        emoji = char.get("emoji", "👤") if char else "👤"
+        lines.append(
+            f'<div class="log-entry"><div class="log-head">'
+            f'<span class="log-emoji">{emoji}</span><span class="log-name">{r["name"]}</span>'
+            f'<span class="log-mood">{MOOD_EMOJI.get(r["mood"], "😐")}</span></div>'
+            f'<div class="log-text">"{r["text"]}"</div></div>'
+        )
+    if followup:
+        lines.append(f'<div class="log-entry log-followup"><div class="log-text">🔗 <em>{followup["text"]}</em></div></div>')
+    gossip_from = [r for r in reactions if random.random() < 0.3]
+    if gossip_from:
+        source = random.choice(gossip_from)
+        others = [c["name"] for c in world["cast"] if c["name"] != source["name"]]
+        if others:
+            target = random.choice(others)
+            snippet = source["text"][:60] + ("…" if len(source["text"]) > 60 else "")
+            lines.append(f'<div class="log-entry log-gossip"><div class="log-text">🗣️ '
+                         f'<em>Word spreads: {target.split()[0]} hears "{snippet}"</em></div></div>')
+            world_state.add_gossip(world_id, target, snippet)
+    return f'<div class="town-log-inner">{"".join(lines)}</div>'
 
 
-def hear_reaction(name, event_text_state, last_reactions_state):
-    if not last_reactions_state or not name:
-        return None
+def render_explainer(world_id, reactions=None, focus=None):
+    world = get_world(world_id)
+    if not reactions:
+        return ('<div class="explain-inner"><div class="explain-empty">'
+                'Pick a <b>scenario</b> or throw an event, then this panel explains '
+                '<b>why each person reacted the way they did</b> — great for teaching how '
+                'different people respond to the same situation.</div></div>')
+    parts = []
+    if focus:
+        parts.append(f'<div class="explain-focus">🎓 <b>Think about:</b> {focus}</div>')
+    else:
+        parts.append('<div class="explain-focus">🎓 <b>Why did they react this way?</b></div>')
+    for r in reactions:
+        c = next((x for x in world["cast"] if x["name"] == r["name"]), None)
+        if not c:
+            continue
+        trait = (c.get("traits") or ["distinct"])[0]
+        hint = c.get("catchphrase_hint", "responds in their own way")
+        col = char_color(world, r["name"])
+        understanding = (r.get("understanding") or "").strip()
+        action = (r.get("action") or "").strip()
+        if understanding or action:
+            reason = (
+                f'reads it as: <em>{understanding}</em> ' if understanding else ''
+            ) + (
+                f'so they <b>{action}</b>.' if action else ''
+            )
+            parts.append(
+                f'<div class="explain-row"><b style="color:{col}">{r["name"].split()[0]}</b> '
+                f'(feeling <em>{r["mood"]}</em>, naturally <em>{trait}</em>) {reason}</div>'
+            )
+        else:
+            parts.append(
+                f'<div class="explain-row"><b style="color:{col}">{r["name"].split()[0]}</b> '
+                f'feels <em>{r["mood"]}</em> and is naturally <em>{trait}</em>, '
+                f'so they {hint}.</div>'
+            )
+    return f'<div class="explain-inner">{"".join(parts)}</div>'
 
-    rx = next((r for r in last_reactions_state if r["name"] == name), None)
-    if not rx:
-        return None
 
-    try:
-        char_data = next(c for c in chars.CHARACTERS if c["name"] == name)
-        return voice.generate_voice(rx["text"], char_data["voice_description"])
-    except Exception as e:
-        print(f"[app] hear_reaction failed: {e}")
-        return None
+def scenario_choices(world_id):
+    world = get_world(world_id)
+    return [(s["title"], s["id"]) for s in world.get("scenarios", [])]
 
 
-css_path = os.path.join(os.path.dirname(__file__), "assets", "style.css")
-css_content = ""
-if os.path.exists(css_path):
-    with open(css_path) as f:
-        css_content = f.read()
+def render_stage_shell():
+    return '<div class="stage" id="tw-stage"><canvas id="tw-canvas"></canvas><div class="stage-vignette"></div></div>'
 
-js_path = os.path.join(os.path.dirname(__file__), "assets", "map.js")
-js_content = ""
-if os.path.exists(js_path):
-    with open(js_path) as f:
-        js_content = f.read()
 
-with gr.Blocks(
-    title="TinyWorld — AI Neighborhood Game",
-) as demo:
+# ---------------------------------------------------------------- assets
+def _read(path):
+    full = os.path.join(os.path.dirname(__file__), path)
+    if os.path.exists(full):
+        with open(full) as f:
+            return f.read()
+    return ""
+
+
+css_content = _read("assets/style.css")
+js_content = _read("assets/game.js")
+
+DEFAULT_WORLD = os.environ.get("TW_DEFAULT_WORLD", "maple_street")
+world_list = list_worlds()
+world_names = {w["id"]: w["name"] for w in world_list}
+
+
+# ---------------------------------------------------------------- UI
+with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
+    current_world_id = gr.State(DEFAULT_WORLD)
     last_reactions_state = gr.State([])
-    event_text_state = gr.State("")
 
-    gr.HTML("""
-    <div class="tw-header">
-        <div class="tw-logo">🏘️ TINYWORLD</div>
-        <div class="tw-tagline">Throw an event. Watch the neighborhood react.</div>
-        <div class="tw-credits">Models: MiniCPM5-1B (×5 characters) · VoxCPM2 (voices) · Cohere Transcribe · Powered by Modal</div>
-    </div>
-    """)
+    with gr.Row():
+        with gr.Column(scale=7):
+            gr.HTML('<div class="tw-topbar"><div class="tw-logo">TINYWORLD</div>'
+                    '<div class="tw-tagline">the town that remembers</div></div>')
+        with gr.Column(scale=2, min_width=160):
+            world_picker = gr.Dropdown(
+                choices=[(world_names.get(w["id"], w["id"]), w["id"]) for w in world_list],
+                value=DEFAULT_WORLD, label="World")
+        with gr.Column(scale=3, min_width=210):
+            ticker_html = gr.HTML(render_ticker(DEFAULT_WORLD))
 
-    roster_html = gr.HTML(render_roster())
-    chaos_meter_html = gr.HTML(render_chaos_meter())
+    # the canvas stage (rendered once, never re-rendered → game loop persists)
+    gr.HTML(render_stage_shell())
+
+    # hidden data channels for the canvas
+    world_box = gr.Textbox(value=build_world_payload(DEFAULT_WORLD), elem_id="tw-world",
+                           elem_classes="tw-data", label="", interactive=True)
+    reactions_box = gr.Textbox(value="", elem_id="tw-reactions", elem_classes="tw-data",
+                               label="", interactive=True)
+
+    with gr.Row(elem_id="tw-console"):
+        with gr.Column(scale=8):
+            event_input = gr.Textbox(
+                placeholder="Type an event to throw at the neighborhood…  (e.g. a UFO lands in the park)",
+                label="", show_label=False, lines=1)
+        with gr.Column(scale=2, min_width=150):
+            trigger_btn = gr.Button("⚡ THROW", variant="primary", elem_id="throw-btn")
+
+    with gr.Row(elem_id="tw-actions"):
+        with gr.Column(scale=6, min_width=260):
+            scenario_dd = gr.Dropdown(choices=scenario_choices(DEFAULT_WORLD), value=None,
+                                      label="🎓 Teaching scenario — a real situation to explore")
+        with gr.Column(scale=2, min_width=140):
+            run_scenario_btn = gr.Button("🎓 Run Scenario")
+        with gr.Column(scale=2, min_width=140):
+            random_btn = gr.Button("🎲 Random Chaos")
 
     with gr.Row(equal_height=False):
-        with gr.Column(scale=65):
-            gr.HTML('<div class="glass-panel map-panel"><div class="panel-title">🏘️ THE NEIGHBORHOOD</div>')
-            map_html = gr.HTML(render_initial_map())
-            gr.HTML("</div>")
+        with gr.Column(scale=3, min_width=220):
+            gr.HTML('<div class="panel-title">🧑‍🤝‍🧑 Townsfolk</div>')
+            roster_html = gr.HTML(render_roster(DEFAULT_WORLD))
+        with gr.Column(scale=4, min_width=240):
+            gr.HTML('<div class="panel-title">📜 Town Log</div>')
+            town_log_html = gr.HTML(render_town_log(DEFAULT_WORLD))
+        with gr.Column(scale=4, min_width=240):
+            gr.HTML('<div class="panel-title">🎓 Learn — Why did they react?</div>')
+            explainer_html = gr.HTML(render_explainer(DEFAULT_WORLD))
 
-        with gr.Column(scale=35):
-            gr.HTML('<div class="glass-panel feed-panel"><div class="panel-title">📜 NEIGHBORHOOD FEED</div>')
-            feed_output = gr.Markdown(
-                value="*The neighborhood is quiet... throw an event to see what happens!*",
-                elem_id="feed",
-            )
-            gr.HTML("</div>")
+    gr.HTML('<div class="panel-title" style="margin-top:6px">🔊 Voice</div>')
+    with gr.Row(elem_id="tw-audio", equal_height=False):
+        with gr.Column(scale=4, min_width=240):
+            mic_input = gr.Audio(sources=["microphone"], type="filepath", label="🎙️ 1 · Record your event")
+            transcribe_btn = gr.Button("📝 2 · Transcribe to text")
+            mic_status = gr.HTML('<div class="audio-cap">Record → press <b>Transcribe</b>: your words fill the '
+                                 'event box, then press <b>⚡ THROW</b>. <i>Mic only works on '
+                                 'http://localhost:7860 (blocked on 0.0.0.0).</i></div>')
+        with gr.Column(scale=4, min_width=240):
+            voice_output = gr.Audio(label="🔊 Auto-voice (plays after each event)", autoplay=True)
+            gr.HTML('<div class="audio-cap">The <b>most dramatic</b> reaction is read aloud automatically.</div>')
+        with gr.Column(scale=4, min_width=240):
+            hear_name = gr.Dropdown(choices=[], label="🎧 Replay a character's voice")
+            hear_btn = gr.Button("▶ Play their last line")
+            gr.HTML('<div class="audio-cap">Pick any character and hear their <b>last line</b> again.</div>')
 
-    gr.HTML('<div class="glass-panel event-panel">')
-    with gr.Row():
-        event_input = gr.Textbox(
-            placeholder="Throw an event at the neighborhood…",
-            label="",
-            scale=5,
-            show_label=False,
-        )
-        mic_input = gr.Audio(
-            sources=["microphone"],
-            type="filepath",
-            label="🎤",
-            scale=2,
-        )
-    with gr.Row():
-        trigger_btn = gr.Button("⚡ Trigger", variant="primary", scale=3)
-        random_btn = gr.Button("🎲 Random Chaos", scale=2)
-        transcribe_btn = gr.Button("🎙️ Transcribe Mic", scale=2)
-    gr.HTML("</div>")
+    gr.HTML('<div class="tw-footer">Built for <strong>Build Small Hackathon 2026</strong> · '
+            'Hugging Face × Gradio · Thousand Token Wood<br>'
+            'Models: <strong>Nemotron-Mini-4B</strong> (NVIDIA) + <strong>VoxCPM2</strong> (OpenBMB) · '
+            '<strong>Whisper on Modal</strong> speech-to-text, Cohere fallback · <strong>Modal</strong><br>'
+            '<span class="footer-muted">Switch maps with the <b>World</b> picker, top-right · '
+            'open at <b>http://localhost:7860</b> for microphone access.</span></div>')
 
-    gr.HTML('<div class="glass-panel voice-panel">')
-    with gr.Row():
-        voice_output = gr.Audio(label="🔊 Auto-play (most dramatic)", autoplay=True)
-    with gr.Row():
-        hear_name = gr.Dropdown(choices=[], label="Choose character", scale=3)
-        hear_btn = gr.Button("🔊 Hear this one", scale=2)
-    gr.HTML("</div>")
-
-    recap_html = gr.HTML(render_recap([], ""))
-
-    gr.HTML("""
-    <div class="tw-footer">
-        Built for <strong>Build Small Hackathon 2026</strong> · Hugging Face × Gradio · Thousand Token Wood track<br>
-        Sponsor models: <strong>OpenBMB</strong> (MiniCPM5-1B, VoxCPM2) · <strong>Cohere</strong> (Transcribe) · <strong>Modal</strong> (serverless inference)
-    </div>
-    """)
-
-    def do_trigger(event_text):
-        global _event_count, _chaos_level
-        if not event_text or not event_text.strip():
-            return render_map(None), "", None, gr.Dropdown(choices=[], value=None), event_text, [], render_roster(), render_chaos_meter(), render_recap([], "")
-
-        _event_count += 1
-        _chaos_level = min(_chaos_level + 1, 7)
-
-        reactions = agents.react(event_text.strip())
-
-        # Smallville-lite: form reflections every ~5 events
-        for c in chars.CHARACTERS:
-            maybe_form_reflection(c["name"])
-
-        # Vibe drift: nudge each character's vibes based on their mood
-        for r in reactions:
-            name = r["name"]
-            mood = r["mood"]
-            base_e = MOOD_ENERGY.get(mood, 50)
-            base_s = MOOD_SOCIAL.get(mood, 50)
-            _vibes[name]["energy"] = max(0, min(100, _vibes[name]["energy"] * 0.6 + base_e * 0.4 + random.randint(-5, 5)))
-            _vibes[name]["social"] = max(0, min(100, _vibes[name]["social"] * 0.6 + base_s * 0.4 + random.randint(-5, 5)))
-
-        # Consequence chain
-        followup = agents.generate_followup(reactions, event_text.strip())
-
+    # ---------------------------------------------------------- handlers
+    def _run_event(world_id, event_text, focus=None):
+        world = get_world(world_id)
+        world_state.init_cast(world)
+        reactions = agents.react(world_id, event_text)["reactions"]
+        followup = agents.generate_followup(reactions, event_text)
         top = max(reactions, key=lambda r: r["drama"])
         audio = None
         try:
-            char_data = next(c for c in chars.CHARACTERS if c["name"] == top["name"])
-            audio = voice.generate_voice(top["text"], char_data["voice_description"])
+            cd = next(c for c in world["cast"] if c["name"] == top["name"])
+            audio = voice.generate_voice(top["text"], cd["voice_description"])
         except Exception as e:
-            print(f"[app] voice generation failed: {e}")
-
-        feed_lines = []
-        for r in reactions:
-            emoji = EMOJI.get(r["name"], "👤")
-            mood_e = MOOD_EMOJI.get(r["mood"], "😐")
-            feed_lines.append(f'{emoji} **{r["name"]}** ({mood_e} {r["mood"]}): "{r["text"]}"')
-        if followup:
-            feed_lines.append(f'\n*🔗 {followup["text"]}*')
-        feed_text = "\n\n".join(feed_lines)
-
+            print(f"[app] voice failed: {e}")
         names = [r["name"] for r in reactions]
+        return (render_town_log(world_id, reactions, followup), render_roster(world_id),
+                render_ticker(world_id), audio,
+                gr.Dropdown(choices=names, value=names[0] if names else None),
+                reactions, build_reactions_payload(world_id, reactions),
+                render_explainer(world_id, reactions, focus))
 
-        return (
-            render_map(reactions),
-            feed_text,
-            audio,
-            gr.Dropdown(choices=names, value=names[0] if names else None),
-            event_text,
-            reactions,
-            render_roster(),
-            render_chaos_meter(),
-            render_recap(reactions, event_text.strip()),
-        )
+    def do_trigger(event_text, world_id):
+        if not event_text or not event_text.strip():
+            return (render_town_log(world_id), render_roster(world_id), render_ticker(world_id),
+                    None, gr.Dropdown(choices=[], value=None), [], "", render_explainer(world_id))
+        return _run_event(world_id, event_text.strip())
 
-    trigger_btn.click(
-        fn=do_trigger,
-        inputs=[event_input],
-        outputs=[map_html, feed_output, voice_output, hear_name, event_text_state, last_reactions_state, roster_html, chaos_meter_html, recap_html],
-    )
+    def run_scenario(scenario_id, world_id):
+        world = get_world(world_id)
+        scen = next((s for s in world.get("scenarios", []) if s["id"] == scenario_id), None)
+        if not scen:
+            return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
+                    gr.update(), gr.update(), gr.update(), gr.update())
+        return (scen["event"],) + _run_event(world_id, scen["event"], scen.get("focus"))
 
-    random_btn.click(fn=random_chaos, outputs=[event_input])
+    def random_chaos(world_id):
+        world = get_world(world_id)
+        if world and world.get("events"):
+            return random.choice(world["events"])
+        return events.random_event()
 
-    transcribe_btn.click(
-        fn=transcribe_audio,
-        inputs=[mic_input],
-        outputs=[event_input],
-    )
+    def switch_world(world_id):
+        world = get_world(world_id)
+        if world:
+            world_state.reset_world(world_id)
+            world_state.init_cast(world)
+        return (build_world_payload(world_id), "", render_town_log(world_id),
+                render_roster(world_id), render_ticker(world_id),
+                gr.Dropdown(choices=scenario_choices(world_id), value=None),
+                render_explainer(world_id), world_id)
 
-    hear_btn.click(
-        fn=hear_reaction,
-        inputs=[hear_name, event_text_state, last_reactions_state],
-        outputs=[voice_output],
-    )
+    def transcribe_audio(audio_path):
+        if not audio_path:
+            return ("", '<div class="audio-cap">⚠ No recording found — press the mic ● record button first. '
+                    '<i>The mic only works on http://localhost:7860.</i></div>')
+        text = transcribe.transcribe(audio_path)
+        if not text:
+            return ("", '<div class="audio-cap">⚠ Could not transcribe. Try again, or just type the event.</div>')
+        return (text, f'<div class="audio-cap">✅ Heard: "<b>{text}</b>" — now press <b>⚡ THROW</b>.</div>')
 
-    demo.load(fn=render_initial_map, outputs=[map_html])
+    def hear_reaction(name, world_id, reactions):
+        if not reactions or not name:
+            return None
+        rx = next((r for r in reactions if r["name"] == name), None)
+        if not rx:
+            return None
+        world = get_world(world_id)
+        try:
+            cd = next(c for c in world["cast"] if c["name"] == name)
+            return voice.generate_voice(rx["text"], cd["voice_description"])
+        except Exception as e:
+            print(f"[app] hear failed: {e}")
+            return None
+
+    trig_out = [town_log_html, roster_html, ticker_html, voice_output,
+                hear_name, last_reactions_state, reactions_box, explainer_html]
+    trigger_btn.click(do_trigger, [event_input, current_world_id], trig_out)
+    event_input.submit(do_trigger, [event_input, current_world_id], trig_out)
+    run_scenario_btn.click(run_scenario, [scenario_dd, current_world_id], [event_input] + trig_out)
+    random_btn.click(random_chaos, [current_world_id], [event_input])
+    transcribe_btn.click(transcribe_audio, [mic_input], [event_input, mic_status])
+    hear_btn.click(hear_reaction, [hear_name, current_world_id, last_reactions_state], [voice_output])
+    world_picker.change(switch_world, [world_picker],
+                        [world_box, reactions_box, town_log_html, roster_html, ticker_html,
+                         scenario_dd, explainer_html, current_world_id])
 
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, css=css_content, js=js_content if js_content else None)
+    print("\n  TinyWorld is starting…")
+    print("  ▶ Open  http://localhost:7860   (use localhost, not 0.0.0.0, so the mic works)\n")
+    demo.launch(server_name="0.0.0.0", server_port=7860, css=css_content, js=js_content or None)

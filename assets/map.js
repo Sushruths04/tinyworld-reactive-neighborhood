@@ -1,183 +1,146 @@
-// TinyWorld — map polish JS
-// Shockwave, screen-shake, staggered bubbles, typewriter, bubble auto-dismiss
-
+// TinyWorld — stage life: staggered bubbles, typewriter, shockwave, wander + juice.
 (function () {
-  const BUBBLE_LIFETIME_MS = 8000;
-  const STAGGER_DELAY_MS = 80;
+  var BUBBLE_LIFETIME_MS = 8000;
+  var STAGGER_DELAY_MS = 120;
 
-  /* ── Shockwave ring on trigger ── */
-  function triggerShockwave() {
-    var mapEl = document.querySelector('.tw-map');
-    if (!mapEl) return;
-
-    // Create two concentric rings for depth
-    for (var i = 0; i < 2; i++) {
-      var ring = document.createElement('div');
-      ring.className = 'shockwave-ring';
-      if (i === 1) ring.style.animationDelay = '0.15s';
-      mapEl.appendChild(ring);
-      (function (el) {
-        setTimeout(function () { el.remove(); }, 1200);
-      })(ring);
-    }
-
-    // Screen-shake
-    document.body.classList.add('screen-shake');
-    setTimeout(function () {
-      document.body.classList.remove('screen-shake');
-    }, 180);
-  }
-
-  /* ── Staggered bubble spring-in + typewriter ── */
   function animateBubbles() {
-    var bubbles = document.querySelectorAll('.speech-bubble');
-    var index = 0;
+    var bubbles = document.querySelectorAll('.bubble:not([data-animated])');
+    var i = 0;
     bubbles.forEach(function (b) {
-      if (b.dataset.animated) return;
       b.dataset.animated = '1';
-
-      // Stagger: hide initially, reveal with delay
-      b.style.opacity = '0';
-      b.style.transform = 'translateX(-50%) scale(0)';
-      var delay = index * STAGGER_DELAY_MS;
-      index++;
-
-      setTimeout(function () {
-        b.style.transition = 'opacity 0.3s ease, transform 0.35s cubic-bezier(.2,.8,.2,1)';
-        b.style.opacity = '1';
-        b.style.transform = 'translateX(-50%) scale(1)';
-
-        // Typewriter: wrap text content, reveal char by char
-        typewriterReveal(b);
-      }, delay);
+      b.dataset.spawned = Date.now();
+      b.style.animationDelay = (i * STAGGER_DELAY_MS) + 'ms';
+      setTimeout(function () { typewriter(b); }, i * STAGGER_DELAY_MS + 120);
+      i++;
     });
+    // Juice: trigger roster flash + mood pop for each speaking pawn
+    setTimeout(function () {
+      document.querySelectorAll('.pawn.speaking').forEach(function (p) {
+        var moodEl = p.querySelector('.pawn-mood');
+        if (moodEl) { moodEl.classList.remove('pop'); void moodEl.offsetWidth; moodEl.classList.add('pop'); }
+      });
+      document.querySelectorAll('.roster-card').forEach(function (c) {
+        c.classList.remove('speaking-flash'); void c.offsetWidth; c.classList.add('speaking-flash');
+      });
+    }, 200);
   }
 
-  function typewriterReveal(bubble) {
-    var textNode = bubble.firstChild;
-    if (!textNode || textNode.nodeType !== 3) return;
-
-    var fullText = textNode.textContent;
-    if (fullText.length < 3) return;
-
-    textNode.textContent = '';
-    var charIndex = 0;
-    var speed = Math.max(12, Math.min(30, 600 / fullText.length));
-
-    function typeNext() {
-      if (charIndex < fullText.length) {
-        textNode.textContent += fullText[charIndex];
-        charIndex++;
-        setTimeout(typeNext, speed);
-      }
-    }
-    typeNext();
+  function typewriter(bubble) {
+    var node = bubble.firstChild;
+    if (!node || node.nodeType !== 3) return;
+    var full = node.textContent;
+    if (full.length < 4) return;
+    node.textContent = '';
+    var k = 0;
+    var speed = Math.max(9, Math.min(22, 520 / full.length));
+    (function step() {
+      if (k < full.length) { node.textContent += full[k++]; setTimeout(step, speed); }
+    })();
   }
 
-  /* ── Bubble auto-dismiss ── */
-  function dismissOldBubbles() {
-    var bubbles = document.querySelectorAll('.speech-bubble');
-    bubbles.forEach(function (b) {
-      if (!b.dataset.spawned) {
-        b.dataset.spawned = Date.now();
-      }
-      var age = Date.now() - parseInt(b.dataset.spawned, 10);
-      if (age > BUBBLE_LIFETIME_MS) {
-        b.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+  function dismissOld() {
+    document.querySelectorAll('.bubble[data-spawned]').forEach(function (b) {
+      if (Date.now() - parseInt(b.dataset.spawned, 10) > BUBBLE_LIFETIME_MS) {
+        b.style.transition = 'opacity .4s ease, transform .4s ease';
         b.style.opacity = '0';
-        b.style.transform = 'translateX(-50%) scale(0.8)';
-        setTimeout(function () { b.remove(); }, 500);
+        b.style.transform = 'translateX(-50%) translateY(8px) scale(.9)';
+        setTimeout(function () { if (b.parentNode) b.remove(); }, 400);
       }
     });
   }
+  setInterval(dismissOld, 1000);
 
-  setInterval(dismissOldBubbles, 1000);
+  function fireShockwave() {
+    var sw = document.querySelector('.shockwave');
+    if (!sw) return;
+    sw.classList.remove('fire'); void sw.offsetWidth; sw.classList.add('fire');
+    setTimeout(function () { sw.classList.remove('fire'); }, 900);
+  }
 
-  /* ── Observer: detect new bubbles → animate + shockwave ── */
-  var isFirstRender = true;
+  // Juice: screen shake on event throw
+  function fireScreenShake() {
+    var stage = document.querySelector('.stage');
+    if (!stage) return;
+    stage.classList.remove('shake'); void stage.offsetWidth; stage.classList.add('shake');
+    setTimeout(function () { stage.classList.remove('shake'); }, 550);
+  }
 
-  var observer = new MutationObserver(function (mutations) {
-    var hasNewBubbles = false;
-    for (var m = 0; m < mutations.length; m++) {
-      var nodes = mutations[m].addedNodes;
-      for (var n = 0; n < nodes.length; n++) {
-        var node = nodes[n];
-        if (node.nodeType === 1) {
-          if (node.classList && node.classList.contains('speech-bubble')) {
-            hasNewBubbles = true;
-          }
-          if (node.querySelector && node.querySelector('.speech-bubble')) {
-            hasNewBubbles = true;
-          }
+  // Juice: button pulse on throw
+  function fireButtonPulse() {
+    var btn = document.querySelector('#throw-btn') || document.querySelector('button.primary');
+    if (!btn) return;
+    btn.classList.remove('pulse'); void btn.offsetWidth; btn.classList.add('pulse');
+    setTimeout(function () { btn.classList.remove('pulse'); }, 2500);
+  }
+
+  // Juice: meter tick glow when vibe-fill width changes
+  function watchMeters() {
+    var fills = document.querySelectorAll('.vibe-fill');
+    fills.forEach(function (f) {
+      if (f.dataset.watched) return;
+      f.dataset.watched = '1';
+      var lastW = f.style.width;
+      var m = new MutationObserver(function () {
+        if (f.style.width !== lastW) {
+          lastW = f.style.width;
+          f.classList.remove('tick'); void f.offsetWidth; f.classList.add('tick');
         }
-      }
-    }
+      });
+      m.observe(f, { attributes: true, attributeFilter: ['style'] });
+    });
+  }
+  setInterval(watchMeters, 500);
 
-    if (hasNewBubbles) {
-      if (!isFirstRender) {
-        triggerShockwave();
-      }
-      isFirstRender = false;
-      setTimeout(animateBubbles, 50);
+  // Juice: day/night tint drift
+  function startTintDrift() {
+    var tint = document.querySelector('.stage-tint');
+    if (tint && !tint.classList.contains('drift')) tint.classList.add('drift');
+  }
 
-      // Hide idle overlay when bubbles appear
-      var idle = document.querySelector('.idle-overlay');
-      if (idle) idle.classList.remove('visible');
+  // gentle idle wander so the town feels alive between events
+  function wander() {
+    document.querySelectorAll('.pawn').forEach(function (p) {
+      if (p.classList.contains('speaking')) return;
+      var dx = (Math.random() * 2 - 1) * 0.7;
+      var dy = (Math.random() * 2 - 1) * 0.4;
+      var t = p.querySelector('.pawn-token');
+      if (t) t.style.transform = 'translate(' + dx.toFixed(2) + 'px,' + dy.toFixed(2) + 'px)';
+    });
+  }
+  setInterval(wander, 2600);
+
+  // Juice: track mouse on buttons for radial highlight
+  document.addEventListener('mousemove', function (e) {
+    var btn = e.target.closest('button.primary, .gr-button-primary, #throw-btn');
+    if (!btn) return;
+    var rect = btn.getBoundingClientRect();
+    btn.style.setProperty('--mx', ((e.clientX - rect.left) / rect.width * 100) + '%');
+    btn.style.setProperty('--my', ((e.clientY - rect.top) / rect.height * 100) + '%');
+  });
+
+  var observer = new MutationObserver(function (muts) {
+    var fresh = false;
+    muts.forEach(function (m) {
+      m.addedNodes && m.addedNodes.forEach(function (n) {
+        if (n.nodeType === 1 && (n.querySelector ? (n.querySelector('.bubble') || n.classList.contains('bubble')) : false)) fresh = true;
+      });
+    });
+    if (fresh) {
+      setTimeout(function () {
+        animateBubbles();
+        fireShockwave();
+        fireScreenShake();
+        fireButtonPulse();
+        startTintDrift();
+      }, 40);
     }
   });
 
-  /* ── Active-speaker glow ── */
-  function highlightSpeaker(name) {
-    // Remove previous glow
-    var prev = document.querySelector('.tile.speaking');
-    if (prev) prev.classList.remove('speaking');
-
-    // Find character tile by matching emoji text
-    var tiles = document.querySelectorAll('.tile');
-    tiles.forEach(function (tile) {
-      var nameEl = tile.querySelector('.char-emoji');
-      if (nameEl && nameEl.textContent.trim()) {
-        // Match by position in roster order
-        var moodEl = tile.querySelector('.char-mood');
-        if (moodEl && moodEl.title) {
-          // Use the mood title as a proxy — we'll match by grid position instead
-        }
-      }
-    });
+  function watch() {
+    var root = document.querySelector('.gradio-container') || document.body;
+    if (root) { observer.observe(root, { childList: true, subtree: true }); animateBubbles(); startTintDrift(); }
+    else setTimeout(watch, 300);
   }
-
-  // Watch for audio element changes (auto-play voice)
-  var audioObserver = new MutationObserver(function (mutations) {
-    for (var m = 0; m < mutations.length; m++) {
-      var target = mutations[m].target;
-      if (target.tagName === 'AUDIO' && target.src) {
-        // Voice is playing — could highlight speaker here
-        break;
-      }
-    }
-  });
-
-  function watchAudio() {
-    var audioEls = document.querySelectorAll('audio');
-    audioEls.forEach(function (a) {
-      audioObserver.observe(a, { attributes: true, attributeFilter: ['src'] });
-    });
-  }
-
-  setTimeout(watchAudio, 1000);
-
-  function watchMap() {
-    var mapEl = document.querySelector('.tw-map');
-    if (mapEl) {
-      observer.observe(mapEl, { childList: true, subtree: true });
-    } else {
-      setTimeout(watchMap, 500);
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', watchMap);
-  } else {
-    watchMap();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch);
+  else watch();
 })();
