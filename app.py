@@ -72,36 +72,25 @@ def build_reactions_payload(world_id, reactions):
     board = world["board"]
     hs = board["hotspots_tile"]
     acts = board.get("activities", {})
-    cols, rows = board["cols"], board["rows"]
-    pc = board.get("plaza_center", [cols / 2, rows / 2])
-    edges = [[1, 1], [cols - 2, 1], [1, rows - 2], [cols - 2, rows - 2],
-             [cols // 2, 1], [1, rows // 2], [cols - 2, rows // 2], [cols // 2, rows - 2]]
-    pool = list(hs.values()) + edges
-    random.shuffle(pool)
-    # randomize how the town responds: sometimes everyone gathers, usually they scatter
-    mode = random.choice(["gather", "scatter", "scatter", "mixed"])
     out = {"ts": time.time(), "reactions": []}
-    for i, r in enumerate(reactions):
+    for r in reactions:
         name = r["name"]
-        key = r.get("moved_to")
+        key = r.get("moved_to") or world_state.get_position(world_id, name)
         act = acts.get(name, {})
         action = (r.get("action") or "").strip()
         short_action = (action[:24].rstrip() + "…") if len(action) > 25 else action
         label = short_action or act.get("label", "")
         vehicle = act.get("vehicle", "")
-        if key and key in hs:                                   # agent explicitly chose a spot
+        if key and key in hs:
             tgt = hs[key]
-        elif mode == "gather":                                  # everyone converges on the square
-            tgt = [round(pc[0] + random.uniform(-2.2, 2.2), 1), round(pc[1] + random.uniform(-2.2, 2.2), 1)]
-        elif random.random() < 0.45 and act.get("tile"):        # in-character haunt
-            tgt = act["tile"]
-        else:                                                   # scatter across the map
-            tgt = pool[i % len(pool)]
+        else:
+            home = next((c.get("home") for c in world["cast"] if c["name"] == name), None)
+            tgt = hs.get(home) or hs.get("square") or [0, 0]
         out["reactions"].append({
             "name": name, "short": name.split()[0],
             "mood": r["mood"], "moodEmoji": MOOD_EMOJI.get(r["mood"], "😐"),
             "text": r["text"], "target": tgt, "activity": label, "vehicle": vehicle,
-            "running": random.random() < 0.5,
+            "running": False,
         })
     return json.dumps(out)
 

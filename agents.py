@@ -3,6 +3,7 @@ import random
 import re
 import time
 import concurrent.futures
+import decide
 import world_state
 from worlds import get_world
 
@@ -645,18 +646,76 @@ def _error_reaction(character, mood, message):
     }
 
 
+def _needs_from_vibes(world_id, name):
+    vibes = world_state.get_vibes(world_id).get(name, {"energy": 0.5, "social": 0.5})
+    return {
+        "energy": int(vibes.get("energy", 0.5) * 100),
+        "hunger": 45,
+        "social": int(vibes.get("social", 0.5) * 100),
+    }
+
+
+def _reaction_from_decision(character, decision):
+    vibe_delta = _compute_vibe_delta(decision.mood)
+    vibe_delta["energy"] += decision.need_deltas.get("energy", 0) / 100.0
+    vibe_delta["social"] += decision.need_deltas.get("social", 0) / 100.0
+    goto = None if decision.goto == "stay" else decision.goto
+    text = decision.say
+    if decision.degraded and decision.warning:
+        text = f"{text} [decision degraded: {decision.warning}]"
+    return {
+        "name": character["name"],
+        "mood": decision.mood,
+        "text": text,
+        "understanding": decision.think,
+        "action": decision.action,
+        "model": character["model"],
+        "drama": _compute_drama(f"{decision.say} {decision.action}"),
+        "moved_to": goto,
+        "vibe_delta": vibe_delta,
+        "affinity_deltas": _compute_affinity_deltas(character["name"], character, decision.mood),
+        "error": decision.error,
+        "degraded": decision.degraded,
+    }
+
+
 def _react_one(character, event, world):
+    global _FAILURES, _CIRCUIT_OPEN_UNTIL
     wid = world["id"]
-    mood = random.choice(MOODS)
-    world_state.set_mood(wid, character["name"], mood)
+    mood = world_state.get_mood(wid, character["name"])
     memory = world_state.get_memory(wid, character["name"])
     relationships = _format_relationships(character)
+    position = world_state.get_position(wid, character["name"]) or character.get("home", "square")
+    needs = _needs_from_vibes(wid, character["name"])
 
     if MOCK:
-        result = _mock_react(character, event, mood, world)
+        decision_obj = decide.mock_decision(character, event, mood, world)
+        result = _reaction_from_decision(character, decision_obj)
     else:
-        result = _real_react(character, event, mood, memory, relationships, world)
+        try:
+            now = time.time()
+            if _CIRCUIT_OPEN_UNTIL > now:
+                _set_runtime_status("error", character["model"], "LLM error", None, "circuit breaker cooling down")
+                return _error_reaction(
+                    character, mood,
+                    f"model unreachable — retry after {int(_CIRCUIT_OPEN_UNTIL - now)}s",
+                )
+            _set_runtime_status("waking", character["model"], "Waking the model (~90s)", None)
+            decision_obj = decide.decide_real(
+                character, event, mood, memory, relationships, world, position, needs
+            )
+            _FAILURES = 0
+            _set_runtime_status("live", character["model"], "Live", decision_obj.latency)
+            result = _reaction_from_decision(character, decision_obj)
+        except Exception as e:
+            _FAILURES += 1
+            if _FAILURES >= 3:
+                _CIRCUIT_OPEN_UNTIL = time.time() + 60.0
+            print(f"[agents] Decision failed for {character['name']}: {e}")
+            _set_runtime_status("error", character["model"], "LLM error", None, str(e))
+            result = _error_reaction(character, mood, f"model unreachable — retrying ({e})")
 
+    world_state.set_mood(wid, character["name"], result["mood"])
     # learn from what they DID, not just what they said, so future reactions build on it
     learned = result.get("action") or result["text"]
     world_state.add_memory(wid, character["name"], event, learned)

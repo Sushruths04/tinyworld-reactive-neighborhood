@@ -144,8 +144,15 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Verified offline/mock: `python3 -m py_compile app.py agents.py voice.py transcribe.py world_state.py modal_app.py health_check.py worlds/*.py`, `TINYWORLD_MOCK=1 python3 -c "import agents; ..."` returns 5 reactions + mock runtime, `TINYWORLD_MOCK=1 python3 health_check.py`, `node --check assets/game.js`.
 - Verified Gradio callback smoke on `http://localhost:8098` with `TINYWORLD_MOCK=1`: `/do_trigger` and `/run_scenario` return the new 🟡 mock badge without callback errors. Local bind/client required sandbox escalation.
 
+## Done & verified — V10 Phase 2 (decision engine, by Codex, 2026-06-14)
+- Added `decide.py` with strict Decision contract (`think`, `say`, `action`, `goto`, `mood`, `need_deltas`), structured prompt building, Modal call wrapper, JSON extraction, one malformed-output retry, dialogue cleanup, mood/goto/need-delta guardrails, and deterministic safe degraded Decisions.
+- Rewired `agents.react()` so each character receives a validated Decision. Mood now comes from the Decision, not an unconditional event-time reroll; `moved_to` comes from validated `Decision.goto`; mock mode also returns schema-shaped Decisions.
+- Preserved Phase 1 honesty behavior on the new decision path: real-mode failures return visible error reactions and update the 🔴 badge instead of falling back to mock.
+- Rewrote `build_reactions_payload()` in `app.py` as an authoritative pass-through: canvas targets use the engine's stored position/validated `moved_to`; removed gather/scatter/mixed random target reassignment and random running flags.
+- Verified: `python3 -m py_compile app.py agents.py decide.py voice.py transcribe.py world_state.py modal_app.py worlds/*.py`, `TINYWORLD_MOCK=1` decision smoke with 5 reactions, explicit assertion that every payload target equals the engine position tile, `python3 validate_worlds.py`, and `node --check assets/game.js`.
+
 ## In progress
-- V10 Phase 2 — decision engine (`decide.py`) per `CODEX_REBUILD_SPEC.md`: structured Decision JSON, guardrails, authoritative `goto`, and removal of random movement reassignment.
+- V10 Phase 3 — input router (`router.py`) per `CODEX_REBUILD_SPEC.md`: classify directed commands vs world events and route addressees without broadcasting every command.
 
 ## Deploy note ("post it")
 - Local run is fully working: `TINYWORLD_MOCK=1 python3 app.py` → http://localhost:7860, or set `GRADIO_SERVER_PORT=<port>` if 7860 is busy.
@@ -153,7 +160,6 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
   and the real (non-mock) model path. Commits/push remain **Codex-only** per project rule.
 
 ## Next up
-- V10 Phase 2: add `decide.py`, route `agents.react()` through validated Decisions, and make `build_reactions_payload()` honor engine-approved `goto` without gather/scatter randomization.
 - V10 Phase 3: add directed-command router.
 - V10 Phase 4: add clock, schedules, needs, and daily logs.
 - V10 Phase 5: keep Maple Street, replace `starhaven`/`old_town` with Riverside Campus.
@@ -166,4 +172,4 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Diorama PNG not yet created — stage uses CSS gradient fallback.
 
 ## How to resume
-- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 2. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.
+- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 3. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.
