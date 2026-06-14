@@ -2,6 +2,7 @@ import os
 import json
 import time
 import random
+import html
 import gradio as gr
 import agents
 import voice
@@ -28,6 +29,10 @@ CHAR_COLORS = {
     "Luca Bell": "#38e8ff", "Priya Raman": "#9b6bff",
 }
 PALETTE = ["#ff5fa2", "#ff8a5f", "#7CFFB2", "#38e8ff", "#9b6bff"]
+
+
+def esc(value):
+    return html.escape(str(value), quote=True)
 
 
 def char_color(world, name):
@@ -159,14 +164,17 @@ def render_town_log(world_id, reactions=None, followup=None):
     for r in reactions:
         char = next((c for c in world["cast"] if c["name"] == r["name"]), None)
         emoji = char.get("emoji", "👤") if char else "👤"
+        name = esc(r["name"])
+        text = esc(r["text"])
+        mood = esc(r["mood"])
         lines.append(
             f'<div class="log-entry"><div class="log-head">'
-            f'<span class="log-emoji">{emoji}</span><span class="log-name">{r["name"]}</span>'
+            f'<span class="log-emoji">{emoji}</span><span class="log-name">{name}</span>'
             f'<span class="log-mood">{MOOD_EMOJI.get(r["mood"], "😐")}</span></div>'
-            f'<div class="log-text">"{r["text"]}"</div></div>'
+            f'<div class="log-text" data-mood="{mood}">"{text}"</div></div>'
         )
     if followup:
-        lines.append(f'<div class="log-entry log-followup"><div class="log-text">🔗 <em>{followup["text"]}</em></div></div>')
+        lines.append(f'<div class="log-entry log-followup"><div class="log-text">🔗 <em>{esc(followup["text"])}</em></div></div>')
     gossip_from = [r for r in reactions if random.random() < 0.3]
     if gossip_from:
         source = random.choice(gossip_from)
@@ -175,7 +183,7 @@ def render_town_log(world_id, reactions=None, followup=None):
             target = random.choice(others)
             snippet = source["text"][:60] + ("…" if len(source["text"]) > 60 else "")
             lines.append(f'<div class="log-entry log-gossip"><div class="log-text">🗣️ '
-                         f'<em>Word spreads: {target.split()[0]} hears "{snippet}"</em></div></div>')
+                         f'<em>Word spreads: {esc(target.split()[0])} hears "{esc(snippet)}"</em></div></div>')
             world_state.add_gossip(world_id, target, snippet)
     return f'<div class="town-log-inner">{"".join(lines)}</div>'
 
@@ -189,7 +197,7 @@ def render_explainer(world_id, reactions=None, focus=None):
                 'different people respond to the same situation.</div></div>')
     parts = []
     if focus:
-        parts.append(f'<div class="explain-focus">🎓 <b>Think about:</b> {focus}</div>')
+        parts.append(f'<div class="explain-focus">🎓 <b>Think about:</b> {esc(focus)}</div>')
     else:
         parts.append('<div class="explain-focus">🎓 <b>Why did they react this way?</b></div>')
     for r in reactions:
@@ -199,8 +207,11 @@ def render_explainer(world_id, reactions=None, focus=None):
         trait = (c.get("traits") or ["distinct"])[0]
         hint = c.get("catchphrase_hint", "responds in their own way")
         col = char_color(world, r["name"])
-        understanding = (r.get("understanding") or "").strip()
-        action = (r.get("action") or "").strip()
+        understanding = esc((r.get("understanding") or "").strip())
+        action = esc((r.get("action") or "").strip())
+        first_name = esc(r["name"].split()[0])
+        mood = esc(r["mood"])
+        trait_text = esc(trait)
         if understanding or action:
             reason = (
                 f'reads it as: <em>{understanding}</em> ' if understanding else ''
@@ -208,14 +219,14 @@ def render_explainer(world_id, reactions=None, focus=None):
                 f'so they <b>{action}</b>.' if action else ''
             )
             parts.append(
-                f'<div class="explain-row"><b style="color:{col}">{r["name"].split()[0]}</b> '
-                f'(feeling <em>{r["mood"]}</em>, naturally <em>{trait}</em>) {reason}</div>'
+                f'<div class="explain-row"><b style="color:{col}">{first_name}</b> '
+                f'(feeling <em>{mood}</em>, naturally <em>{trait_text}</em>) {reason}</div>'
             )
         else:
             parts.append(
-                f'<div class="explain-row"><b style="color:{col}">{r["name"].split()[0]}</b> '
-                f'feels <em>{r["mood"]}</em> and is naturally <em>{trait}</em>, '
-                f'so they {hint}.</div>'
+                f'<div class="explain-row"><b style="color:{col}">{first_name}</b> '
+                f'feels <em>{mood}</em> and is naturally <em>{trait_text}</em>, '
+                f'so they {esc(hint)}.</div>'
             )
     return f'<div class="explain-inner">{"".join(parts)}</div>'
 
@@ -379,7 +390,7 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
         text = transcribe.transcribe(audio_path)
         if not text:
             return ("", '<div class="audio-cap">⚠ Could not transcribe. Try again, or just type the event.</div>')
-        return (text, f'<div class="audio-cap">✅ Heard: "<b>{text}</b>" — now press <b>⚡ THROW</b>.</div>')
+        return (text, f'<div class="audio-cap">✅ Heard: "<b>{esc(text)}</b>" — now press <b>⚡ THROW</b>.</div>')
 
     def hear_reaction(name, world_id, reactions):
         if not reactions or not name:
@@ -409,6 +420,7 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
 
 
 if __name__ == "__main__":
+    port = int(os.environ.get("GRADIO_SERVER_PORT", "7860"))
     print("\n  TinyWorld is starting…")
-    print("  ▶ Open  http://localhost:7860   (use localhost, not 0.0.0.0, so the mic works)\n")
-    demo.launch(server_name="0.0.0.0", server_port=7860, css=css_content, js=js_content or None)
+    print(f"  ▶ Open  http://localhost:{port}   (use localhost, not 0.0.0.0, so the mic works)\n")
+    demo.launch(server_name="0.0.0.0", server_port=port, css=css_content, js=js_content or None)

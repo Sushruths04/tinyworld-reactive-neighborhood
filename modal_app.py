@@ -233,7 +233,7 @@ async def react_endpoint(request: Request):
             continue
 
         try:
-            text = llm.generate.remote(model_id, prompt)
+            text = await llm.generate.remote.aio(model_id, prompt)
             results.append({
                 "name": name,
                 "job": char.get("job", ""),
@@ -268,7 +268,7 @@ async def voice_endpoint(request: Request):
 
     tts = TTS()
     try:
-        wav_bytes = tts.synthesize.remote(text, voice_desc)
+        wav_bytes = await tts.synthesize.remote.aio(text, voice_desc)
         return Response(content=wav_bytes, media_type="audio/wav")
     except Exception as e:
         raise HTTPException(500, f"TTS failed: {e}")
@@ -287,7 +287,7 @@ async def transcribe_endpoint(request: Request):
     suffix = request.headers.get("x-audio-suffix", ".wav")
     asr = ASR()
     try:
-        text = asr.transcribe_bytes.remote(audio_bytes, suffix)
+        text = await asr.transcribe_bytes.remote.aio(audio_bytes, suffix)
         return JSONResponse(content={"text": text})
     except Exception as e:
         raise HTTPException(500, f"Transcription failed: {e}")

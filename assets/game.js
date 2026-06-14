@@ -10,7 +10,8 @@
     if (document.getElementById('tw-mic-warn')) return;
     if (location.hostname === '0.0.0.0' || (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1')) {
       var b = document.createElement('div'); b.id = 'tw-mic-warn'; b.className = 'tw-mic-warn';
-      b.innerHTML = '⚠ For the microphone, open <b>http://localhost:7860</b> — voice input is blocked on this address (' + location.hostname + '). Typing works everywhere.';
+      var port = location.port ? ':' + location.port : '';
+      b.innerHTML = '⚠ For the microphone, open <b>http://localhost' + port + '</b> — voice input is blocked on this address (' + location.hostname + '). Typing works everywhere.';
       document.body.appendChild(b);
     }
   }

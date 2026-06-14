@@ -4,7 +4,7 @@ emoji: 🏘️
 colorFrom: cyan
 colorTo: violet
 sdk: gradio
-sdk_version: "5.0"
+sdk_version: "6.18.0"
 app_file: app.py
 pinned: false
 tags:
@@ -12,7 +12,7 @@ tags:
   - build-small
   - adventure-in-thousand-token-wood
   - openbmb/MiniCPM5-1B
-  - nvidia/NVIDIA-Nemotron-3-Nano-4B
+  - nvidia/Nemotron-Mini-4B-Instruct
   - openbmb/VoxCPM2
   - cohere/cohere-transcribe-03-2026
 ---
@@ -49,12 +49,13 @@ Trigger the same event 3 times → you get 3 completely different reactions each
 
 | Model | Params | Role | Sponsor |
 |---|---|---|---|
-| `openbmb/MiniCPM5-1B` | 1B | Warm/creative character agents (Marta, Jay, Luca) | OpenBMB |
-| `nvidia/NVIDIA-Nemotron-3-Nano-4B` | 4B | Logical/structured character agents (Nia, Priya) | NVIDIA |
+| `nvidia/Nemotron-Mini-4B-Instruct` | 4B | Primary character dialogue model for all worlds | NVIDIA |
+| `openbmb/MiniCPM5-1B` | 1B | Lightweight fallback dialogue model on Modal | OpenBMB |
 | `openbmb/VoxCPM2` | 2B | Character voice synthesis (TTS) | OpenBMB |
-| `Cohere Transcribe` | 2B | Speech-to-text (mic input) | Cohere |
+| Whisper `base` on Modal | ~74M | Primary speech-to-text (mic input) | Modal |
+| `Cohere Transcribe` | 2B | Speech-to-text fallback path | Cohere |
 
-**Total model budget: ~9B params** (well under the 32B cap — earns the *Tiny Titan* badge).
+**Total model budget: under 10B params** (well under the 32B cap — earns the *Tiny Titan* badge).
 
 ## Built With
 
@@ -64,9 +65,10 @@ Trigger the same event 3 times → you get 3 completely different reactions each
 
 ## Sponsor Credits
 
-- **OpenBMB** — MiniCPM5-1B (creative agents) + VoxCPM2 (voice synthesis)
-- **NVIDIA** — Nemotron-3-Nano-4B (structured agents)
-- **Cohere** — Transcribe (speech-to-text)
+- **NVIDIA** — Nemotron-Mini-4B-Instruct (character dialogue)
+- **OpenBMB** — MiniCPM5-1B fallback + VoxCPM2 voice synthesis
+- **Modal** — serverless LLM, voice, and Whisper transcription endpoints
+- **Cohere** — Transcribe fallback path
 
 ---
 

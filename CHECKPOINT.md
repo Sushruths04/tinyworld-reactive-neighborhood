@@ -126,11 +126,20 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Local checks passed: `python3 -m py_compile modal_app.py transcribe.py voice.py app.py agents.py world_state.py worlds/*.py`, `TINYWORLD_MOCK=1` transcribe, `TINYWORLD_MOCK=1` `agents.react(...)`, `python3 validate_worlds.py`, and `node --check assets/game.js`.
 - `TINYWORLD_MOCK=1 python3 test_scenarios.py` is not a mock test; the script forces `TINYWORLD_MOCK=0` internally and failed in this sandbox because DNS to Modal is blocked (`Temporary failure in name resolution`). Re-run it from a network-enabled shell.
 
+## Done & verified — V9 (bug pass, by Codex, 2026-06-14)
+- Fixed app startup port bug: `app.py` now respects `GRADIO_SERVER_PORT` instead of hard-coding `7860`.
+- Fixed mic-warning copy in `assets/game.js`: it now points to the current browser port (`localhost:<port>`) instead of always `localhost:7860`.
+- Fixed unsafe HTML rendering in `app.py`: reaction text, follow-up text, gossip snippets, teaching focus text, parsed model reasoning/actions, and transcription status are escaped before insertion into `gr.HTML`.
+- Fixed deploy metadata drift: README and requirements now pin Gradio `6.18.0+`, README model tags/table now reflect `nvidia/Nemotron-Mini-4B-Instruct`, Modal Whisper transcription, and Cohere fallback.
+- Fixed Modal async warning: FastAPI endpoints now use `await ...remote.aio(...)` instead of blocking `.remote(...)` calls inside async endpoints.
+- Redeployed Modal successfully after the async endpoint fix.
+- Verified: `py_compile`, `validate_worlds.py`, `node --check assets/game.js`, malicious-text render escaping, and valid Gradio callback flow on `http://localhost:8062` (`do_trigger`, `random_chaos`, `run_scenario`, `switch_world`, `transcribe_audio`).
+
 ## In progress
-- None — V7 complete and tested.
+- None — V9 bug pass complete and tested.
 
 ## Deploy note ("post it")
-- Local run is fully working: `TINYWORLD_MOCK=1 python3 app.py` → http://localhost:7860.
+- Local run is fully working: `TINYWORLD_MOCK=1 python3 app.py` → http://localhost:7860, or set `GRADIO_SERVER_PORT=<port>` if 7860 is busy.
 - Going live on HF Spaces needs the user's HF account + `COHERE_API_KEY`/Modal token as Space secrets,
   and the real (non-mock) model path. Commits/push remain **Codex-only** per project rule.
 
