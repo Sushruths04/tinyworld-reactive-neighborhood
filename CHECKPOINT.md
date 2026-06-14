@@ -169,8 +169,17 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Added `build_state_payload()` and updated `assets/game.js` so silent schedule ticks move characters without speech bubbles or shockwaves.
 - Verified: `python3 -m py_compile app.py agents.py decide.py router.py world_state.py modal_app.py voice.py transcribe.py worlds/*.py`, direct schedule tick smoke (time advances, Luca is in class at 08:30, needs drift, silent payload has all 5 characters), `python3 validate_worlds.py`, `node --check assets/game.js`, and Gradio `/do_trigger` smoke on `http://localhost:8100` still returns one Marta command reaction plus daily log output.
 
+## Done & verified — V10 Phase 5 (Riverside Campus world replacement, by Codex, 2026-06-14)
+- Removed `starhaven.py` and `old_town.py` from `worlds/` and from the registry. Active worlds are now exactly `maple_street` and `riverside_campus`.
+- Added `worlds/riverside_campus.py`: a distinct 24x16 school-town board with central quad, riverside walk, school/science/café/nurse/grounds buildings, different dimensions/layout from Maple, and its own scenarios/events.
+- Added the locked Riverside cast: teacher Elena Brooks, students Samir Patel and Maya Chen, café owner Rosa Alvarez, school nurse Talia Reed, and groundskeeper Owen Moss. Each has role, schedule, needs-compatible routine, relationships, voice description, and Nemotron model assignment.
+- Extended `validate_worlds.py` to fail duplicate board signatures and invalid role/schedule hotspots.
+- Extended `router.py` aliases for Riverside (`nurse_office`, `quad`, `riverside_walk`) so commands such as `Talia, go to the clinic` resolve correctly.
+- Updated README copy from fixed "5 characters" reaction toy language to the current life-sim/directed-command behavior.
+- Verified: `python3 validate_worlds.py` passes with only Maple Street and Riverside Campus; `python3 -m py_compile app.py agents.py decide.py router.py world_state.py validate_worlds.py worlds/*.py`; direct Riverside command smoke routes `Talia, go to the clinic` to `nurse_office`; Gradio smoke on `http://localhost:8101` switches to Riverside and returns one Talia reaction targeting `[16, 8]`.
+
 ## In progress
-- V10 Phase 5 — world redesign: keep Maple Street, remove `starhaven` + `old_town`, add Riverside Campus with distinct board/cast/schedules.
+- V10 Phase 6 — pytest suite, fake LLM, guardrail hardening, and acceptance script.
 
 ## Deploy note ("post it")
 - Local run is fully working: `TINYWORLD_MOCK=1 python3 app.py` → http://localhost:7860, or set `GRADIO_SERVER_PORT=<port>` if 7860 is busy.
@@ -178,7 +187,6 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
   and the real (non-mock) model path. Commits/push remain **Codex-only** per project rule.
 
 ## Next up
-- V10 Phase 5: keep Maple Street, replace `starhaven`/`old_town` with Riverside Campus.
 - V10 Phase 6: pytest suite, fake LLM, guardrail hardening, and acceptance script.
 
 ## Blockers / decisions
@@ -189,4 +197,4 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Diorama PNG not yet created — stage uses CSS gradient fallback.
 
 ## How to resume
-- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 5. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.
+- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 6. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.

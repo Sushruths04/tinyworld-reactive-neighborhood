@@ -68,6 +68,16 @@ def resolve_location(text, world, cast=None, addressees=None):
             return home
 
     aliases = dict(BASE_LOCATION_ALIASES)
+    if "nurse_office" in hotspots:
+        aliases["clinic"] = "nurse_office"
+        aliases["nurse"] = "nurse_office"
+        aliases["nurse office"] = "nurse_office"
+    if "quad" in hotspots:
+        aliases["quad"] = "quad"
+        aliases["campus"] = "quad"
+    if "riverside_walk" in hotspots:
+        aliases["river"] = "riverside_walk"
+        aliases["riverside"] = "riverside_walk"
     for key in hotspots:
         aliases[key] = key
         aliases[key.replace("_", " ")] = key

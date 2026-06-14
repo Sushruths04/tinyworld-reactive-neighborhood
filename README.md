@@ -21,7 +21,7 @@ tags:
 
 **Throw an event. Watch the neighborhood react.**
 
-A tiny pixel-art neighborhood where 5 AI characters react unpredictably, in their own voices, to whatever chaos you throw at them. Built for the **Build Small Hackathon 2026** (Hugging Face × Gradio), targeting the **Adventure in Thousand Token Wood** track.
+A tiny life-sim town where AI characters react unpredictably, follow routines, and obey directed commands in their own voices. Built for the **Build Small Hackathon 2026** (Hugging Face × Gradio), targeting the **Adventure in Thousand Token Wood** track.
 
 ## Source
 
@@ -32,7 +32,7 @@ Built with OpenAI Codex. See the commit history for Codex-attributed commits.
 ## How to Play
 
 1. **Type an event** in the textbox (or click 🎲 Random Chaos for inspiration).
-2. **Hit ⚡ Trigger** — watch 5 speech bubbles spring up on the pixel map.
+2. **Hit ⚡ Trigger** — watch the addressed character or whole town react on the canvas.
 3. **Listen** — the most dramatic reaction auto-speaks via VoxCPM2 voice. Pick another character from the dropdown and hit 🔊 to hear them too.
 
 ## What Makes It Unpredictable

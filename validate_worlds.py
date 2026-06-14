@@ -35,6 +35,7 @@ def walkable(board, blk, tile):
 
 def main():
     total_problems = 0
+    signatures = {}
     for wid, w in WORLDS.items():
         board = w["board"]
         blk = blocked_set(board)
@@ -47,6 +48,16 @@ def main():
             home = c.get("home")
             if home not in hs:
                 problems.append(f"cast '{c['name']}' home '{home}' not in hotspots_tile")
+            role = c.get("role")
+            if role and role not in {"student", "worker", "shopkeeper", "medic", "retiree"}:
+                problems.append(f"cast '{c['name']}' has invalid role '{role}'")
+            for entry in c.get("schedule", []):
+                if len(entry) < 5:
+                    problems.append(f"cast '{c['name']}' has malformed schedule entry {entry}")
+                    continue
+                hotspot = entry[2]
+                if hotspot not in hs:
+                    problems.append(f"cast '{c['name']}' schedule hotspot '{hotspot}' not in hotspots_tile")
 
         # every named destination must be reachable
         for name, tile in hs.items():
@@ -75,6 +86,15 @@ def main():
         nb = len(board["buildings"])
         kinds = sorted({b.get("kind", "block") for b in board["buildings"]})
         roads = board["roads"]
+        signature = (
+            board["cols"],
+            board["rows"],
+            tuple((b["gx"], b["gy"], b["w"], b["d"], b.get("kind", "block")) for b in board["buildings"]),
+        )
+        if signature in signatures:
+            problems.append(f"board layout duplicates '{signatures[signature]}'")
+        else:
+            signatures[signature] = wid
         print(f"{wid:14} {board['cols']}x{board['rows']}  roads c{roads.get('cols')} r{roads.get('rows')}  "
               f"{nb} buildings {kinds}")
         if problems:

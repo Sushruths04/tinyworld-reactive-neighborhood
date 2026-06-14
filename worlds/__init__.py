@@ -1,11 +1,9 @@
 from worlds.maple_street import WORLD as MAPLE_STREET
-from worlds.starhaven import WORLD as STARHAVEN
-from worlds.old_town import WORLD as OLD_TOWN
+from worlds.riverside_campus import WORLD as RIVERSIDE_CAMPUS
 
 WORLDS = {
     "maple_street": MAPLE_STREET,
-    "starhaven": STARHAVEN,
-    "old_town": OLD_TOWN,
+    "riverside_campus": RIVERSIDE_CAMPUS,
 }
 
 
