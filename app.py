@@ -8,6 +8,7 @@ import agents
 import voice
 import transcribe
 import events
+import router
 import world_state
 from worlds import get_world, WORLDS, list_worlds
 
@@ -349,10 +350,10 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
             'open at <b>http://localhost:7860</b> for microphone access.</span></div>')
 
     # ---------------------------------------------------------- handlers
-    def _run_event(world_id, event_text, focus=None):
+    def _run_event(world_id, event_text, focus=None, route=None):
         world = get_world(world_id)
         world_state.init_cast(world)
-        result = agents.react(world_id, event_text)
+        result = agents.react(world_id, event_text, route=route)
         reactions = result["reactions"]
         runtime = result.get("runtime") or agents.get_runtime_status()
         followup = agents.generate_followup(reactions, event_text)
@@ -375,7 +376,13 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
             return (render_town_log(world_id), render_roster(world_id), render_ticker(world_id),
                     None, gr.Dropdown(choices=[], value=None), [], "", render_explainer(world_id),
                     render_mode_badge())
-        return _run_event(world_id, event_text.strip())
+        world = get_world(world_id)
+        route = router.classify(event_text.strip(), world)
+        if route["type"] == "noop":
+            return (render_town_log(world_id), render_roster(world_id), render_ticker(world_id),
+                    None, gr.Dropdown(choices=[], value=None), [], "", render_explainer(world_id),
+                    render_mode_badge())
+        return _run_event(world_id, event_text.strip(), route=route)
 
     def run_scenario(scenario_id, world_id):
         world = get_world(world_id)
@@ -383,7 +390,8 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
         if not scen:
             return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
                     gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
-        return (scen["event"],) + _run_event(world_id, scen["event"], scen.get("focus"))
+        route = {"type": "world_event", "text": scen["event"], "instruction": scen["event"], "addressees": [], "goto": None}
+        return (scen["event"],) + _run_event(world_id, scen["event"], scen.get("focus"), route)
 
     def random_chaos(world_id):
         world = get_world(world_id)

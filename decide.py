@@ -58,13 +58,23 @@ def current_activity(character, world, position):
     return "going about their day"
 
 
-def build_decision_prompt(character, event, mood, memory, relationships, world, position=None, needs=None):
+def build_decision_prompt(character, event, mood, memory, relationships, world, position=None, needs=None, command=None):
     first = character["name"].split()[0]
     hotspots = allowed_hotspots(world)
     needs = needs or {"energy": 50, "hunger": 50, "social": 50}
     activity = current_activity(character, world, position)
     memory_text = "; ".join(memory[-4:]) if memory else "nothing recent"
     seed = random.choice(SURPRISE_SEEDS)
+
+    command_text = ""
+    if command and command.get("type") == "directed_command":
+        command_text = (
+            "\nDirected command:\n"
+            f"- Addressee: {character['name']}\n"
+            f"- Instruction to obey unless strongly out of character: {command.get('instruction', event)}\n"
+            f"- Required destination if relevant: {command.get('goto') or 'none'}\n"
+            "If you refuse, explain why in the say field and use goto=stay.\n"
+        )
 
     return f"""You are controlling one TinyWorld character.
 
@@ -84,6 +94,7 @@ Current state:
 
 Allowed goto values: {', '.join(hotspots)}, stay
 Triggering input: {event}
+{command_text}
 Surprise instruction: {seed}
 
 Return ONLY strict JSON with exactly these keys:
@@ -99,8 +110,8 @@ Return ONLY strict JSON with exactly these keys:
 No markdown, no commentary, no labels outside the JSON object."""
 
 
-def decide_real(character, event, mood, memory, relationships, world, position=None, needs=None):
-    prompt = build_decision_prompt(character, event, mood, memory, relationships, world, position, needs)
+def decide_real(character, event, mood, memory, relationships, world, position=None, needs=None, command=None):
+    prompt = build_decision_prompt(character, event, mood, memory, relationships, world, position, needs, command)
     raw, latency = _call_modal(character, event, prompt)
     decision = parse_decision(raw, world, previous_mood=mood)
     decision.latency = latency
@@ -112,12 +123,16 @@ def decide_real(character, event, mood, memory, relationships, world, position=N
     return decision
 
 
-def mock_decision(character, event, mood, world):
+def mock_decision(character, event, mood, world, command=None):
     hotspots = allowed_hotspots(world)
-    goto = _event_goto(event, hotspots)
+    goto = command.get("goto") if command and command.get("goto") in hotspots else _event_goto(event, hotspots)
     chosen_mood = random.choice(MOODS)
     first = character["name"].split()[0]
-    action = _mock_action(character, goto)
+    if command and command.get("type") == "directed_command":
+        instruction = command.get("instruction") or event
+        action = f"follow the instruction: {instruction}"
+    else:
+        action = _mock_action(character, goto)
     templates = [
         f"{first} says this feels {chosen_mood}, but I'm going to {action}.",
         f"I don't love surprises like this. I'll {action} and see what is really going on.",

@@ -151,8 +151,17 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Rewrote `build_reactions_payload()` in `app.py` as an authoritative pass-through: canvas targets use the engine's stored position/validated `moved_to`; removed gather/scatter/mixed random target reassignment and random running flags.
 - Verified: `python3 -m py_compile app.py agents.py decide.py voice.py transcribe.py world_state.py modal_app.py worlds/*.py`, `TINYWORLD_MOCK=1` decision smoke with 5 reactions, explicit assertion that every payload target equals the engine position tile, `python3 validate_worlds.py`, and `node --check assets/game.js`.
 
+## Done & verified — V10 Phase 3 (input router, by Codex, 2026-06-14)
+- Added `router.py` with `classify(text, world)` for `noop`, `ambient`, `world_event`, and `directed_command`.
+- Directed commands match active-cast first names and forms like `Marta, ...`, `tell Jay to ...`, `make X ...`; multi-name commands are supported.
+- Added world-aware location alias resolution: clinic, cafe/café, school, park, square, office, shop/store, and per-character `home` for commands like `tell Jay to go home and rest`.
+- Routed `app.py` trigger input through the classifier before `agents.react()`.
+- Updated `agents.react()` to run only the addressed character(s) for directed commands and keep other characters on their existing engine positions. Router-resolved destinations override the Decision `goto` after whitelist validation.
+- Updated structured prompts in `decide.py` to explicitly include directed-command addressee, instruction, and required destination.
+- Verified: `python3 -m py_compile app.py agents.py decide.py router.py`; direct mock acceptance test for `Marta, go to the clinic` produced exactly one reaction, moved only Marta to `nia_clinic`, and kept all other positions unchanged; router checks for world event, emoji ambient input, Jay home command, and multi-addressee cafe command; Gradio `/do_trigger` smoke on `http://localhost:8099` returned one Marta reaction targeting `[18, 15]`.
+
 ## In progress
-- V10 Phase 3 — input router (`router.py`) per `CODEX_REBUILD_SPEC.md`: classify directed commands vs world events and route addressees without broadcasting every command.
+- V10 Phase 4 — living town clock, schedules, needs, and daily logs per `CODEX_REBUILD_SPEC.md`.
 
 ## Deploy note ("post it")
 - Local run is fully working: `TINYWORLD_MOCK=1 python3 app.py` → http://localhost:7860, or set `GRADIO_SERVER_PORT=<port>` if 7860 is busy.
@@ -160,7 +169,6 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
   and the real (non-mock) model path. Commits/push remain **Codex-only** per project rule.
 
 ## Next up
-- V10 Phase 3: add directed-command router.
 - V10 Phase 4: add clock, schedules, needs, and daily logs.
 - V10 Phase 5: keep Maple Street, replace `starhaven`/`old_town` with Riverside Campus.
 
@@ -172,4 +180,4 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Diorama PNG not yet created — stage uses CSS gradient fallback.
 
 ## How to resume
-- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 3. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.
+- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 4. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.

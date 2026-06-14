@@ -679,7 +679,7 @@ def _reaction_from_decision(character, decision):
     }
 
 
-def _react_one(character, event, world):
+def _react_one(character, event, world, route=None):
     global _FAILURES, _CIRCUIT_OPEN_UNTIL
     wid = world["id"]
     mood = world_state.get_mood(wid, character["name"])
@@ -689,7 +689,7 @@ def _react_one(character, event, world):
     needs = _needs_from_vibes(wid, character["name"])
 
     if MOCK:
-        decision_obj = decide.mock_decision(character, event, mood, world)
+        decision_obj = decide.mock_decision(character, event, mood, world, route)
         result = _reaction_from_decision(character, decision_obj)
     else:
         try:
@@ -702,7 +702,7 @@ def _react_one(character, event, world):
                 )
             _set_runtime_status("waking", character["model"], "Waking the model (~90s)", None)
             decision_obj = decide.decide_real(
-                character, event, mood, memory, relationships, world, position, needs
+                character, event, mood, memory, relationships, world, position, needs, route
             )
             _FAILURES = 0
             _set_runtime_status("live", character["model"], "Live", decision_obj.latency)
@@ -714,6 +714,13 @@ def _react_one(character, event, world):
             print(f"[agents] Decision failed for {character['name']}: {e}")
             _set_runtime_status("error", character["model"], "LLM error", None, str(e))
             result = _error_reaction(character, mood, f"model unreachable — retrying ({e})")
+
+    forced_goto = (route or {}).get("goto")
+    hotspots = decide.allowed_hotspots(world)
+    if forced_goto in hotspots and not result.get("error"):
+        result["moved_to"] = forced_goto
+        if (route or {}).get("type") == "directed_command":
+            result["action"] = result.get("action") or f"follow the instruction: {(route or {}).get('instruction', event)}"
 
     world_state.set_mood(wid, character["name"], result["mood"])
     # learn from what they DID, not just what they said, so future reactions build on it
@@ -730,7 +737,7 @@ def _format_relationships(character):
     return "Relationships: " + "; ".join(parts) + "."
 
 
-def react(world_id, event, mode="solo"):
+def react(world_id, event, mode="solo", route=None):
     world = get_world(world_id)
     if not world:
         raise ValueError(f"Unknown world: {world_id}")
@@ -739,10 +746,15 @@ def react(world_id, event, mode="solo"):
     world_state.init_cast(world)
     world_state.increment_event(world_id)
 
+    target_names = set((route or {}).get("addressees") or [])
+    cast = [c for c in world["cast"] if not target_names or c["name"] in target_names]
+    if not cast:
+        cast = world["cast"]
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = {
-            executor.submit(_react_one, char, event, world): char
-            for char in world["cast"]
+            executor.submit(_react_one, char, event, world, route): char
+            for char in cast
         }
         reactions = []
         for future in concurrent.futures.as_completed(futures):
@@ -776,7 +788,7 @@ def react(world_id, event, mode="solo"):
     current_town = world_state.get_town_mood(world_id)
     world_state.set_town_mood(world_id, current_town + town_delta)
 
-    for c in world["cast"]:
+    for c in cast:
         if state["event_count"] % 3 == 0:
             world_state.maybe_form_reflection(world_id, c["name"])
 
