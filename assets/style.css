@@ -124,6 +124,35 @@ label > span { color: var(--muted) !important; font-family: 'Rajdhani', sans-ser
   color: var(--neon-cyan); margin-bottom: 10px;
   display: flex; align-items: center; gap: 6px;
 }
+.daily-log-inner {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--glass);
+  border: 1px solid var(--stroke);
+}
+.daily-row {
+  min-width: 0;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  line-height: 1.25;
+  color: var(--muted);
+}
+.daily-row b {
+  display: block;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.daily-row span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 900px) {
+  .daily-log-inner { grid-template-columns: 1fr; }
+}
 
 /* ===================== ROSTER ===================== */
 .roster-rail {

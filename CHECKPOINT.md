@@ -160,8 +160,17 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Updated structured prompts in `decide.py` to explicitly include directed-command addressee, instruction, and required destination.
 - Verified: `python3 -m py_compile app.py agents.py decide.py router.py`; direct mock acceptance test for `Marta, go to the clinic` produced exactly one reaction, moved only Marta to `nia_clinic`, and kept all other positions unchanged; router checks for world event, emoji ambient input, Jay home command, and multi-addressee cafe command; Gradio `/do_trigger` smoke on `http://localhost:8099` returned one Marta reaction targeting `[18, 15]`.
 
+## Done & verified — V10 Phase 4 (living town base, by Codex, 2026-06-14)
+- Added simulation clock state in `world_state.py`: `game_time`, `paused`, `tick()`, `set_paused()`, and `format_time()`.
+- Added role-derived default schedules for `student`, `worker`, `shopkeeper`, `medic`, and `retiree`, plus per-character `needs`, current `activities`, and rolling `timeline` entries.
+- `world_state.tick(world, hours=1.0)` advances the day clock, moves characters to scheduled hotspots, applies need effects, and appends daily timeline entries. Overnight schedules are supported.
+- Roster meters now show real needs: energy, hunger, and social. The top ticker shows day, game time, and paused/live state.
+- Added visible `Daily Log` panel and `⏯ Time` / `⏭ Step` controls. Added a Gradio `Timer` using `TINYWORLD_TIME_SCALE` (default 6 seconds) to advance one game-hour per tick.
+- Added `build_state_payload()` and updated `assets/game.js` so silent schedule ticks move characters without speech bubbles or shockwaves.
+- Verified: `python3 -m py_compile app.py agents.py decide.py router.py world_state.py modal_app.py voice.py transcribe.py worlds/*.py`, direct schedule tick smoke (time advances, Luca is in class at 08:30, needs drift, silent payload has all 5 characters), `python3 validate_worlds.py`, `node --check assets/game.js`, and Gradio `/do_trigger` smoke on `http://localhost:8100` still returns one Marta command reaction plus daily log output.
+
 ## In progress
-- V10 Phase 4 — living town clock, schedules, needs, and daily logs per `CODEX_REBUILD_SPEC.md`.
+- V10 Phase 5 — world redesign: keep Maple Street, remove `starhaven` + `old_town`, add Riverside Campus with distinct board/cast/schedules.
 
 ## Deploy note ("post it")
 - Local run is fully working: `TINYWORLD_MOCK=1 python3 app.py` → http://localhost:7860, or set `GRADIO_SERVER_PORT=<port>` if 7860 is busy.
@@ -169,8 +178,8 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
   and the real (non-mock) model path. Commits/push remain **Codex-only** per project rule.
 
 ## Next up
-- V10 Phase 4: add clock, schedules, needs, and daily logs.
 - V10 Phase 5: keep Maple Street, replace `starhaven`/`old_town` with Riverside Campus.
+- V10 Phase 6: pytest suite, fake LLM, guardrail hardening, and acceptance script.
 
 ## Blockers / decisions
 - Nemotron-Mini-4B is currently wired as the primary public NVIDIA model; MiniCPM5-1B remains loaded on Modal as fallback.
@@ -180,4 +189,4 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Diorama PNG not yet created — stage uses CSS gradient fallback.
 
 ## How to resume
-- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 4. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.
+- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 5. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.

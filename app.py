@@ -22,6 +22,7 @@ MOOD_EMOJI = {
 
 VIBE_COLORS = {
     "energy": ("#ff6b6b", "#ffb15f"),
+    "hunger": ("#ffd76a", "#ff8a5f"),
     "social": ("#38e8ff", "#9b6bff"),
 }
 
@@ -96,6 +97,30 @@ def build_reactions_payload(world_id, reactions):
     return json.dumps(out)
 
 
+def build_state_payload(world_id):
+    world = get_world(world_id)
+    board = world["board"]
+    hs = board["hotspots_tile"]
+    out = {"ts": time.time(), "silent": True, "reactions": []}
+    for c in world["cast"]:
+        name = c["name"]
+        key = world_state.get_position(world_id, name) or c.get("home", "square")
+        tile = hs.get(key) or hs.get(c.get("home")) or hs.get("square") or [0, 0]
+        mood = world_state.get_mood(world_id, name)
+        out["reactions"].append({
+            "name": name,
+            "short": name.split()[0],
+            "mood": mood,
+            "moodEmoji": MOOD_EMOJI.get(mood, "😐"),
+            "text": "",
+            "target": tile,
+            "activity": world_state.get_activity(world_id, name),
+            "vehicle": "",
+            "running": False,
+        })
+    return json.dumps(out)
+
+
 # ---------------------------------------------------------------- roster / ticker / log
 def render_vibe_bar(label, value, colors):
     c1, c2 = colors
@@ -112,20 +137,21 @@ def render_roster(world_id):
     world = get_world(world_id)
     world_state.init_cast(world)
     state = world_state.get_state(world_id)
-    vibes = world_state.get_vibes(world_id)
+    needs = world_state.get_needs(world_id)
     cards = []
     for c in world["cast"]:
         name = c["name"]
         mood = state["moods"].get(name, "curious")
         mood_e = MOOD_EMOJI.get(mood, "😐")
-        v = vibes.get(name, {"energy": 0.5, "social": 0.5})
+        n = needs.get(name, {"energy": 60, "hunger": 35, "social": 50})
         cards.append(
             f'<div class="roster-card" style="border-left-color:{char_color(world, name)}">'
             f'<div class="roster-emoji">{c.get("emoji", "👤")}</div>'
             f'<div class="roster-name">{name.split()[0]}</div>'
             f'<div class="roster-mood">{mood_e} {mood}</div>'
-            f'<div class="roster-meters">{render_vibe_bar("⚡", v["energy"], VIBE_COLORS["energy"])}'
-            f'{render_vibe_bar("💬", v["social"], VIBE_COLORS["social"])}</div>'
+            f'<div class="roster-meters">{render_vibe_bar("⚡", n["energy"] / 100, VIBE_COLORS["energy"])}'
+            f'{render_vibe_bar("🍽", n["hunger"] / 100, VIBE_COLORS["hunger"])}'
+            f'{render_vibe_bar("💬", n["social"] / 100, VIBE_COLORS["social"])}</div>'
             f'</div>'
         )
     return f'<div class="roster-rail">{"".join(cards)}</div>'
@@ -133,16 +159,33 @@ def render_roster(world_id):
 
 def render_ticker(world_id):
     state = world_state.get_state(world_id)
+    day, game_time, paused = world_state.get_game_time(world_id)
     chaos = state["chaos"]
     filled = min(int(chaos * 5), 5)
     bar = "▰" * filled + "▱" * (5 - filled)
     unlocked = " 🔓" if chaos >= 0.5 else ""
     return (
         f'<div class="progress-ticker">'
-        f'<span class="ticker-day">DAY {state["day"]}</span><span class="ticker-sep">·</span>'
+        f'<span class="ticker-day">DAY {day} · {world_state.format_time(game_time)}</span><span class="ticker-sep">·</span>'
+        f'<span class="ticker-events">{"PAUSED" if paused else "LIVE TIME"}</span><span class="ticker-sep">·</span>'
         f'<span class="ticker-events">⚡ {state["event_count"]}</span><span class="ticker-sep">·</span>'
         f'<span class="ticker-chaos">CHAOS {bar}{unlocked}</span></div>'
     )
+
+
+def render_daily_log(world_id):
+    world = get_world(world_id)
+    timeline = world_state.get_timeline(world_id)
+    rows = []
+    for c in world["cast"]:
+        name = c["name"]
+        entries = timeline.get(name, [])[-4:]
+        text = " · ".join(esc(e) for e in entries) if entries else "No entries yet."
+        rows.append(
+            f'<div class="daily-row"><b style="color:{char_color(world, name)}">{esc(name.split()[0])}</b> '
+            f'<span>{text}</span></div>'
+        )
+    return f'<div class="daily-log-inner">{"".join(rows)}</div>'
 
 
 def render_mode_badge(status=None):
@@ -314,6 +357,10 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
             run_scenario_btn = gr.Button("🎓 Run Scenario")
         with gr.Column(scale=2, min_width=140):
             random_btn = gr.Button("🎲 Random Chaos")
+        with gr.Column(scale=1, min_width=120):
+            pause_btn = gr.Button("⏯ Time")
+        with gr.Column(scale=1, min_width=120):
+            step_btn = gr.Button("⏭ Step")
 
     with gr.Row(equal_height=False):
         with gr.Column(scale=3, min_width=220):
@@ -325,6 +372,9 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
         with gr.Column(scale=4, min_width=240):
             gr.HTML('<div class="panel-title">🎓 Learn — Why did they react?</div>')
             explainer_html = gr.HTML(render_explainer(DEFAULT_WORLD))
+
+    gr.HTML('<div class="panel-title" style="margin-top:6px">🕒 Daily Log</div>')
+    daily_log_html = gr.HTML(render_daily_log(DEFAULT_WORLD))
 
     gr.HTML('<div class="panel-title" style="margin-top:6px">🔊 Voice</div>')
     with gr.Row(elem_id="tw-audio", equal_height=False):
@@ -348,6 +398,7 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
             '<strong>Whisper on Modal</strong> speech-to-text, Cohere fallback · <strong>Modal</strong><br>'
             '<span class="footer-muted">Switch maps with the <b>World</b> picker, top-right · '
             'open at <b>http://localhost:7860</b> for microphone access.</span></div>')
+    tick_timer = gr.Timer(value=float(os.environ.get("TINYWORLD_TIME_SCALE", "6")), active=True)
 
     # ---------------------------------------------------------- handlers
     def _run_event(world_id, event_text, focus=None, route=None):
@@ -369,19 +420,20 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
                 render_ticker(world_id), audio,
                 gr.Dropdown(choices=names, value=names[0] if names else None),
                 reactions, build_reactions_payload(world_id, reactions),
-                render_explainer(world_id, reactions, focus), render_mode_badge(runtime))
+                render_explainer(world_id, reactions, focus), render_mode_badge(runtime),
+                render_daily_log(world_id))
 
     def do_trigger(event_text, world_id):
         if not event_text or not event_text.strip():
             return (render_town_log(world_id), render_roster(world_id), render_ticker(world_id),
                     None, gr.Dropdown(choices=[], value=None), [], "", render_explainer(world_id),
-                    render_mode_badge())
+                    render_mode_badge(), render_daily_log(world_id))
         world = get_world(world_id)
         route = router.classify(event_text.strip(), world)
         if route["type"] == "noop":
             return (render_town_log(world_id), render_roster(world_id), render_ticker(world_id),
                     None, gr.Dropdown(choices=[], value=None), [], "", render_explainer(world_id),
-                    render_mode_badge())
+                    render_mode_badge(), render_daily_log(world_id))
         return _run_event(world_id, event_text.strip(), route=route)
 
     def run_scenario(scenario_id, world_id):
@@ -389,7 +441,7 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
         scen = next((s for s in world.get("scenarios", []) if s["id"] == scenario_id), None)
         if not scen:
             return (gr.update(), gr.update(), gr.update(), gr.update(), gr.update(),
-                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
+                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update())
         route = {"type": "world_event", "text": scen["event"], "instruction": scen["event"], "addressees": [], "goto": None}
         return (scen["event"],) + _run_event(world_id, scen["event"], scen.get("focus"), route)
 
@@ -407,7 +459,26 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
         return (build_world_payload(world_id), "", render_town_log(world_id),
                 render_roster(world_id), render_ticker(world_id),
                 gr.Dropdown(choices=scenario_choices(world_id), value=None),
-                render_explainer(world_id), world_id, render_mode_badge())
+                render_explainer(world_id), world_id, render_mode_badge(), render_daily_log(world_id))
+
+    def sim_tick(world_id):
+        world = get_world(world_id)
+        if world:
+            world_state.tick(world, hours=1.0)
+        return (render_ticker(world_id), render_roster(world_id),
+                build_state_payload(world_id), render_daily_log(world_id))
+
+    def toggle_time(world_id):
+        _, _, paused = world_state.get_game_time(world_id)
+        world_state.set_paused(world_id, not paused)
+        return sim_tick(world_id)
+
+    def step_time(world_id):
+        world = get_world(world_id)
+        if world:
+            world_state.tick(world, hours=1.0, force=True)
+        return (render_ticker(world_id), render_roster(world_id),
+                build_state_payload(world_id), render_daily_log(world_id))
 
     def transcribe_audio(audio_path):
         if not audio_path:
@@ -433,7 +504,8 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
             return None
 
     trig_out = [town_log_html, roster_html, ticker_html, voice_output,
-                hear_name, last_reactions_state, reactions_box, explainer_html, mode_badge_html]
+                hear_name, last_reactions_state, reactions_box, explainer_html, mode_badge_html,
+                daily_log_html]
     trigger_btn.click(do_trigger, [event_input, current_world_id], trig_out)
     event_input.submit(do_trigger, [event_input, current_world_id], trig_out)
     run_scenario_btn.click(run_scenario, [scenario_dd, current_world_id], [event_input] + trig_out)
@@ -442,7 +514,10 @@ with gr.Blocks(title="TinyWorld — AI Neighborhood Game") as demo:
     hear_btn.click(hear_reaction, [hear_name, current_world_id, last_reactions_state], [voice_output])
     world_picker.change(switch_world, [world_picker],
                         [world_box, reactions_box, town_log_html, roster_html, ticker_html,
-                         scenario_dd, explainer_html, current_world_id, mode_badge_html])
+                         scenario_dd, explainer_html, current_world_id, mode_badge_html, daily_log_html])
+    pause_btn.click(toggle_time, [current_world_id], [ticker_html, roster_html, reactions_box, daily_log_html])
+    step_btn.click(step_time, [current_world_id], [ticker_html, roster_html, reactions_box, daily_log_html])
+    tick_timer.tick(sim_tick, [current_world_id], [ticker_html, roster_html, reactions_box, daily_log_html])
 
 
 if __name__ == "__main__":

@@ -562,11 +562,14 @@
 
     function applyReactions(d) {
       if (!d || !d.reactions || !S.W) return;
-      var pc = S.W.plaza_center || [S.W.cols / 2, S.W.rows / 2]; var p = iso(pc[0], pc[1]); S.waves.push({ x: p.x, y: p.y, t: 0 });
+      if (!d.silent) {
+        var pc = S.W.plaza_center || [S.W.cols / 2, S.W.rows / 2]; var p = iso(pc[0], pc[1]); S.waves.push({ x: p.x, y: p.y, t: 0 });
+      }
       d.reactions.forEach(function (r) {
         var c = S.chars.find(function (x) { return x.name === r.name; }); if (!c) return;
-        c.moodEmoji = r.moodEmoji || ''; c.bubble = r.text || ''; c.bubbleAt = performance.now();
-        c.speaking = true; c.returnAt = 0; c.activity = r.activity || ''; c.vehicle = r.vehicle || ''; c.running = !!r.running;
+        c.moodEmoji = r.moodEmoji || c.moodEmoji || '';
+        if (r.text) { c.bubble = r.text; c.bubbleAt = performance.now(); c.speaking = true; c.returnAt = 0; }
+        c.activity = r.activity || c.activity || ''; c.vehicle = r.vehicle || ''; c.running = !!r.running;
         if (r.target) { c.tx = r.target[0]; c.ty = r.target[1]; }
       });
     }
