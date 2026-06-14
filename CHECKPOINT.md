@@ -178,8 +178,15 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Updated README copy from fixed "5 characters" reaction toy language to the current life-sim/directed-command behavior.
 - Verified: `python3 validate_worlds.py` passes with only Maple Street and Riverside Campus; `python3 -m py_compile app.py agents.py decide.py router.py world_state.py validate_worlds.py worlds/*.py`; direct Riverside command smoke routes `Talia, go to the clinic` to `nurse_office`; Gradio smoke on `http://localhost:8101` switches to Riverside and returns one Talia reaction targeting `[16, 8]`.
 
+## Done & verified — V10 Phase 6 (offline tests + acceptance script, by Codex, 2026-06-14)
+- Added `tests/` pytest suite covering router classification, decision guardrails, schedules, world-state ticking/pausing, world registry/validator, and directed-command integration.
+- Added `acceptance_check.py`, a concise manual checklist matching the v10 acceptance rows for local/live validation.
+- Verified offline test command: `python3 -m pytest -q` → `14 passed`.
+- Verified syntax: `python3 -m py_compile app.py agents.py decide.py router.py world_state.py validate_worlds.py tests/*.py worlds/*.py`.
+- Verified acceptance script output: `python3 acceptance_check.py`.
+
 ## In progress
-- V10 Phase 6 — pytest suite, fake LLM, guardrail hardening, and acceptance script.
+- None — V10 rebuild phases 1-6 are implemented and committed locally through Phase 5; Phase 6 is ready to commit.
 
 ## Deploy note ("post it")
 - Local run is fully working: `TINYWORLD_MOCK=1 python3 app.py` → http://localhost:7860, or set `GRADIO_SERVER_PORT=<port>` if 7860 is busy.
@@ -187,7 +194,8 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
   and the real (non-mock) model path. Commits/push remain **Codex-only** per project rule.
 
 ## Next up
-- V10 Phase 6: pytest suite, fake LLM, guardrail hardening, and acceptance script.
+- Push commits to GitHub when network/approval is available.
+- Run live Modal acceptance from a normal networked terminal: `./start.sh`, then acceptance rows A1-A7.
 
 ## Blockers / decisions
 - Nemotron-Mini-4B is currently wired as the primary public NVIDIA model; MiniCPM5-1B remains loaded on Modal as fallback.
@@ -197,4 +205,4 @@ Replaced the CSS-div "isometric" stage (looked like AI slop, characters teleport
 - Diorama PNG not yet created — stage uses CSS gradient fallback.
 
 ## How to resume
-- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Continue at V10 Phase 6. Run `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.
+- Read `CODEX_REBUILD_SPEC.md`, then `AGENTS.md`, then this file. Run `python3 -m pytest -q` for offline validation and `TINYWORLD_MOCK=1 python3 app.py` to test locally on http://localhost:7860. For real pipeline validation, run `./start.sh`; first real LLM/voice/transcribe requests may cold-start Modal and the sandbox may block Modal DNS.
